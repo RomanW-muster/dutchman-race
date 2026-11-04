@@ -210,6 +210,7 @@ svg.chart{width:100%;height:auto;display:block;overflow:visible}
 .sheet h3{font:700 16px var(--serif);color:var(--gold2);margin:20px 0 10px}
 .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px}
 .form-grid label{display:flex;justify-content:space-between;align-items:center;gap:10px;color:var(--muted)}
+.form-grid select{font:600 14px system-ui,sans-serif;padding:7px 9px;border-radius:9px;border:1px solid var(--line);background:#0b1d38;color:var(--ink)}
 .form-grid input{width:104px;font:600 15px var(--mono);padding:7px 9px;border-radius:9px;border:1px solid var(--line);background:#0b1d38;color:var(--ink)}
 .preview{margin-top:12px;color:var(--ink);font-weight:600}
 .err{color:var(--bad);font-weight:700;min-height:20px;margin-top:6px}
@@ -374,7 +375,9 @@ svg.chart{width:100%;height:auto;display:block;overflow:visible}
    saved in the browser and override these.
    ============================================================ */
 const CONFIG = {
-  start: '08:00',        // the ghost sets sail
+  ghostMode: 'withMe',   // 'withMe' = head-to-head: the ghost sets sail when you start your first session
+                         // 'fixed'  = the ghost sets sail at the start time below, whether you're up or not
+  start: '08:00',        // fixed-mode start time (also the target line on the start-time chart)
   sessionMin: 50,        // session length
   minSessionMin: 40,     // a session must last this long to count as completed
   breakMin: 10,          // normal break
@@ -489,7 +492,7 @@ function dayBounds(k) {
    THE GHOST: sails the perfect day, stretched so it finishes
    ghostBufferMin later. Moves during sessions, stops in breaks.
    ============================================================ */
-function ghostPlan(key, c = cfg()) {
+function ghostPlan(key, c = cfg(), firstStart = null) {
   const segs = [];
   for (let i = 1; i <= c.target; i++) {
     segs.push({ kind: 'session', min: c.sessionMin });
@@ -497,14 +500,22 @@ function ghostPlan(key, c = cfg()) {
   }
   const perfect = segs.reduce((a, s) => a + s.min, 0);
   const stretch = (perfect + c.ghostBufferMin) / perfect;
-  const [hh, mm] = c.start.split(':').map(Number);
-  const base = dateOfKey(key);
-  if (hh < c.rolloverHour) base.setDate(base.getDate() + 1);
-  base.setHours(hh, mm, 0, 0);
-  const startMs = +base;
-  return { segs, perfect, stretch, startMs, perfectFinishMs: startMs + perfect * 60000, finishMs: startMs + (perfect + c.ghostBufferMin) * 60000 };
+  let startMs;
+  if (c.ghostMode === 'withMe') startMs = firstStart;   // head-to-head: waits at the buoy until you start
+  else {
+    const [hh, mm] = c.start.split(':').map(Number);
+    const base = dateOfKey(key);
+    if (hh < c.rolloverHour) base.setDate(base.getDate() + 1);
+    base.setHours(hh, mm, 0, 0);
+    startMs = +base;
+  }
+  const waiting = startMs == null;
+  return { segs, perfect, stretch, startMs, waiting, totalMin: perfect + c.ghostBufferMin,
+    perfectFinishMs: waiting ? null : startMs + perfect * 60000,
+    finishMs: waiting ? null : startMs + (perfect + c.ghostBufferMin) * 60000 };
 }
 function ghostPos(plan, nowMs) {
+  if (plan.waiting) return 0;
   let el = (nowMs - plan.startMs) / 60000 / plan.stretch;   // minutes into the (unstretched) perfect day
   if (el <= 0) return 0;
   let pos = 0;
@@ -560,8 +571,8 @@ function deriveDay(key, now = Date.now()) {
     if (i > 0) breaks += Math.max(0, s.start - sessions[i - 1].end) / 60000;
   });
   const runFrac = running ? Math.min(running.min / c.sessionMin, 1) : 0;
-  const plan = ghostPlan(key);
-  const beat = targetEnd != null && targetEnd <= plan.finishMs;
+  const plan = ghostPlan(key, c, sessions.length ? sessions[0].start : null);
+  const beat = targetEnd != null && plan.finishMs != null && targetEnd <= plan.finishMs;
   // EXTRA QUEST: every session after the island earns a star by length:
   // a full session (50 min) = ★, half a session (25 min) = ½★, shorter = nothing
   const extras = targetEnd == null ? [] : sessions.filter(s => s.start >= targetEnd);
@@ -852,7 +863,7 @@ function renderLive(now = Date.now()) {
   $('#playerShip .sink').style.transform = `translateY(${(water / 100 * 30).toFixed(1)}px) rotate(${(-water / 100 * 4).toFixed(1)}deg)`;
   $('#ghostShip').classList.toggle('glowing', g >= c.target);
   $('#playerTag').innerHTML = `You · ${d.quest ? '★ ' + d.extraPos.toFixed(1) : d.playerPos.toFixed(1)} <span class="gauge" title="Water in the hull"><i style="width:${water}%"></i></span>${water}%`;
-  $('#ghostTag').textContent = d.quest ? 'Flying Dutchman · left behind' : `Flying Dutchman · ${g.toFixed(1)}`;
+  $('#ghostTag').textContent = d.quest ? 'Flying Dutchman · left behind' : d.plan.waiting ? 'Flying Dutchman · waiting for you' : `Flying Dutchman · ${g.toFixed(1)}`;
   renderSky(now);
 
   // banner when you reach the island; star tally once you sail on
@@ -885,8 +896,9 @@ function renderLive(now = Date.now()) {
 
   let sub;
   if (d.quest) sub = (d.beat ? `You beat the Dutchman by ${fmtDur((d.plan.finishMs - d.targetEnd) / 60000)} and kept sailing.` : `Island reached at ${fmtHM(d.targetEnd)} and you kept sailing.`) + ` Every extra session earns a star: ${c.sessionMin} min = ★, ${c.sessionMin / 2} min = ½★.`;
+  else if (d.plan.waiting) sub = `The Dutchman is waiting at the buoy. It sets sail the moment you press S and needs ${fmtDur(d.plan.totalMin)} to reach the island.`;
   else if (now < d.plan.startMs) sub = `The Dutchman sets sail at ${fmtHM(d.plan.startMs)} and reaches the island at ${fmtHM(d.plan.finishMs)}.`;
-  else if (g < c.target) sub = `The Dutchman reaches the island at ${fmtHM(d.plan.finishMs)} (a perfect day finishes ${fmtHM(d.plan.perfectFinishMs)}).`;
+  else if (g < c.target) sub = `${c.ghostMode === 'withMe' ? `The Dutchman set sail with you at ${fmtHM(d.plan.startMs)} and` : 'The Dutchman'} reaches the island at ${fmtHM(d.plan.finishMs)} (a perfect day finishes ${fmtHM(d.plan.perfectFinishMs)}).`;
   else sub = done ? `The Dutchman reached the island at ${fmtHM(d.plan.finishMs)}.` : `The Dutchman reached the island at ${fmtHM(d.plan.finishMs)}. Your race isn't over: keep sailing.`;
   const behindFull = Math.floor(Math.max(0, diff) + 1e-9);
   sub += ` Hull water ${water}%: ${d.leaks.length} leak${d.leaks.length === 1 ? '' : 's'} × ${c.leakPct}%` + (behindFull ? ` + ${behindFull} full session${behindFull === 1 ? '' : 's'} behind × ${c.behindPct}%.` : '.');
@@ -1196,7 +1208,8 @@ function startQuest() {
    SETTINGS
    ============================================================ */
 const FIELDS = [
-  ['start', 'Dutchman sets sail', 'time'],
+  ['ghostMode', 'Dutchman sets sail', 'select', [['withMe', 'When I start (head-to-head)'], ['fixed', 'At a fixed time']]],
+  ['start', 'Fixed start time', 'time'],
   ['sessionMin', 'Session length (min)'],
   ['minSessionMin', 'Counts as complete after (min)'],
   ['breakMin', 'Normal break (min)'],
@@ -1217,16 +1230,17 @@ function openSettings() {
 }
 function closeSettings() { $('#settings').hidden = true; }
 function fillSettings(c) {
-  $('#settingsForm').innerHTML = FIELDS.map(([k, label, type]) =>
-    `<label>${label}<input data-k="${k}" type="${type === 'time' ? 'time' : 'number'}" ${type === 'time' ? '' : 'min="0" step="1"'} value="${esc(c[k])}"></label>`).join('');
+  $('#settingsForm').innerHTML = FIELDS.map(([k, label, type, opts]) => type === 'select'
+    ? `<label>${label}<select data-k="${k}">${opts.map(([v, t]) => `<option value="${v}"${c[k] === v ? ' selected' : ''}>${t}</option>`).join('')}</select></label>`
+    : `<label>${label}<input data-k="${k}" type="${type === 'time' ? 'time' : 'number'}" ${type === 'time' ? '' : 'min="0" step="1"'} value="${esc(c[k])}"></label>`).join('');
   updatePreview();
 }
 function readSettings() {
   const out = {};
-  $$('#settingsForm input').forEach(inp => { out[inp.dataset.k] = inp.type === 'time' ? inp.value : Number(inp.value); });
+  $$('#settingsForm input, #settingsForm select').forEach(inp => { out[inp.dataset.k] = inp.tagName === 'SELECT' || inp.type === 'time' ? inp.value : Number(inp.value); });
   const errs = [];
   if (!/^\d{2}:\d{2}$/.test(out.start)) errs.push('Start time looks wrong.');
-  for (const [k, label, type] of FIELDS) if (type !== 'time' && (!Number.isInteger(out[k]) || out[k] < 0)) errs.push(`${label} must be a whole number.`);
+  for (const [k, label, type] of FIELDS) if (!type && (!Number.isInteger(out[k]) || out[k] < 0)) errs.push(`${label} must be a whole number.`);
   if (out.sessionMin < 1) errs.push('Session length must be at least 1 minute.');
   if (out.target < 1) errs.push('Target must be at least 1.');
   if (out.floor < 1 || out.floor > out.target) errs.push('Floor must be between 1 and the target.');
@@ -1237,7 +1251,9 @@ function updatePreview() {
   const { out, errs } = readSettings();
   if (errs.length) { $('#settingsPreview').textContent = ''; return; }
   const p = ghostPlan(todayKey(), Object.assign({}, cfg(), out));
-  $('#settingsPreview').textContent = `Perfect day: ${out.start} → ${fmtHM(p.perfectFinishMs)} (${fmtDur(p.perfect)}). The Dutchman finishes at ${fmtHM(p.finishMs)} (stretch ×${p.stretch.toFixed(3)}).`;
+  $('#settingsPreview').textContent = out.ghostMode === 'withMe'
+    ? `Head-to-head: the Dutchman sets sail when you start your first session and needs ${fmtDur(p.totalMin)} to reach the island (a perfect day is ${fmtDur(p.perfect)}, stretch ×${p.stretch.toFixed(3)}).`
+    : `Perfect day: ${out.start} → ${fmtHM(p.perfectFinishMs)} (${fmtDur(p.perfect)}). The Dutchman finishes at ${fmtHM(p.finishMs)} (stretch ×${p.stretch.toFixed(3)}).`;
 }
 function saveSettings() {
   const { out, errs } = readSettings();
