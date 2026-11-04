@@ -1,0 +1,1497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Flying Dutchman Race</title>
+<meta name="theme-color" content="#071226">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<style>
+/* ============================================================
+   THEME
+   ============================================================ */
+:root{
+  --bg:#0a1830; --panel:#112646; --panel2:#163057; --line:#24426c;
+  --ink:#f3ead6; --muted:#9fb2cc; --dim:#6f86a6;
+  --gold:#e9b949; --gold2:#f8d97f; --wood:#8a5a2b;
+  --water:#4fb3e8; --ghost:#a6f0c6; --bad:#ef7b67; --good:#86dca1;
+  --serif: Georgia, "Times New Roman", serif;
+  --mono: ui-monospace, Menlo, Consolas, monospace;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+button{font:inherit;color:inherit;cursor:pointer}
+[hidden]{display:none !important}
+h2{font:700 19px var(--serif);color:var(--gold2);margin:0 0 10px}
+
+/* ---------- header ---------- */
+header{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:18px;padding:10px 20px;background:#071226;border-bottom:1px solid var(--line)}
+header h1{margin:0;font:700 22px/1 var(--serif);color:var(--gold);letter-spacing:.4px;white-space:nowrap}
+.tabs{display:flex;gap:6px}
+.tabs button{background:transparent;border:1px solid transparent;border-radius:10px;padding:8px 16px;font-weight:700;letter-spacing:.8px;color:var(--muted)}
+.tabs button:hover{color:var(--ink)}
+.tabs button.active{background:var(--panel2);border-color:var(--line);color:var(--gold2)}
+.hdr-right{margin-left:auto;display:flex;gap:8px;align-items:center}
+.chip-btn{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:7px 12px;font-size:14px;font-weight:600}
+.chip-btn:hover{border-color:var(--gold)}
+.chip-btn.danger:hover{border-color:var(--bad);color:var(--bad)}
+.gear{font-size:19px;line-height:1;padding:6px 11px}
+main{padding:16px 20px 48px;max-width:1600px;margin:0 auto}
+
+/* ============================================================
+   SEA SCENE  (layers stacked by z-index, back to front)
+   ============================================================ */
+#scene{position:relative;height:400px;border-radius:18px;overflow:hidden;border:1px solid var(--line);user-select:none}
+#sky{position:absolute;inset:0;z-index:0;transition:background 4s linear}
+.celestial{position:absolute;z-index:1;width:70px;height:70px;transform:translate(-50%,-50%);transition:left 3s linear,top 3s linear}
+.ph-sun{width:100%;height:100%;border-radius:50%;background:radial-gradient(circle,#fff6c2,#f7c948 60%,#f39c34);box-shadow:0 0 40px #f7c94888}
+.ph-moon{width:80%;height:80%;margin:10%;border-radius:50%;background:radial-gradient(circle at 35% 35%,#fbf7e6,#d6d2bf);box-shadow:0 0 30px #fbf7e644}
+#markers{position:absolute;inset:0;z-index:2;pointer-events:none}
+.marker{position:absolute;top:30px;bottom:30px;width:0;border-left:2px dashed rgba(255,255,255,.17)}
+.marker span{position:absolute;top:-24px;left:0;transform:translateX(-50%);font-weight:800;font-size:13px;color:rgba(255,255,255,.75);text-shadow:0 1px 3px #000a;white-space:nowrap}
+.marker.start{border-left-color:rgba(255,255,255,.35)}
+.marker.finish{border-left:3px dashed rgba(233,185,73,.75)}
+.marker.finish span{color:var(--gold2)}
+#seaBase{position:absolute;left:0;right:0;bottom:0;height:165px;z-index:2;background:linear-gradient(#1d7591,#0c2d4c)}
+.wave{position:absolute;left:0;right:0;overflow:hidden;pointer-events:none}
+.wave .strip{position:absolute;top:0;bottom:0;left:0;background-repeat:repeat-x;will-change:transform}
+#waveBack{bottom:118px;height:72px;z-index:3}
+#island{position:absolute;right:0;bottom:114px;width:17%;min-width:150px;max-width:250px;z-index:4}
+#ghostShip{bottom:126px;width:130px;z-index:5}
+#waveMid{bottom:50px;height:94px;z-index:6}
+#buoy{position:absolute;left:1.2%;bottom:56px;width:40px;z-index:7}
+#playerShip{bottom:58px;width:150px;z-index:8}
+#waveFront{bottom:0;height:84px;z-index:9}
+#banner{position:absolute;top:46px;left:50%;transform:translateX(-50%);z-index:10;text-align:center;pointer-events:none}
+#banner .txt{font:700 32px/1.1 var(--serif);color:var(--gold2);text-shadow:0 2px 0 #3a2506,0 0 18px #000a;white-space:nowrap}
+#banner .celebrate-art{width:220px;margin:0 auto}
+#fx{position:absolute;inset:0;z-index:11;pointer-events:none}
+
+/* EXTRA QUEST: the "camera" pans past the island, which slides to the left */
+#island{transition:right 3s ease-in-out}
+#buoy{transition:opacity 1s}
+#scene.quest #island{right:79%}
+#scene.quest #buoy{opacity:0}
+#ghostShip{transition:left 2.5s ease-in-out,opacity 2s}
+#scene.quest #ghostShip{opacity:0}   /* left behind at the island */
+#scene.quest .ship,#scene.quest #playerTag{transition-duration:3s}
+#scene.quest .marker span{color:var(--gold2)}
+.quest-btn{pointer-events:auto;margin-top:12px;background:linear-gradient(#f0c75a,#d9a335);color:#2a1a05;border:2px solid #fff3c4;border-radius:999px;padding:10px 22px;font-weight:800;font-size:17px;letter-spacing:.5px;box-shadow:0 4px 18px #0007;opacity:0;animation:popIn .6s ease-out 2.6s forwards}
+.quest-btn:hover{filter:brightness(1.1)}
+@keyframes popIn{0%{opacity:0;transform:scale(.7)}70%{transform:scale(1.06)}100%{opacity:1;transform:scale(1)}}
+#questBadge{position:absolute;top:44px;left:50%;transform:translateX(-50%);z-index:10;text-align:center;pointer-events:none}
+#questBadge .ttl{font:700 26px/1.1 var(--serif);color:var(--gold2);text-shadow:0 2px 0 #3a2506,0 0 18px #000a;white-space:nowrap}
+#questBadge .stars{margin-top:6px;font-size:24px;letter-spacing:4px;color:var(--gold);text-shadow:0 0 10px #f8d97f88;min-height:30px}
+#questBadge .stars i{font-style:normal;display:inline-block;animation:starPop .5s ease-out}
+#questBadge .stars i.ghost{color:rgba(248,217,127,.3);text-shadow:none;animation:pulse 1.6s ease-in-out infinite}
+#questBadge .stars i.half,#questBadge .stars i.half-on{background:linear-gradient(90deg,var(--gold) 50%,rgba(248,217,127,.25) 50%);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:none}
+@keyframes starPop{0%{transform:scale(0) rotate(-90deg)}70%{transform:scale(1.4)}100%{transform:scale(1)}}
+@keyframes pulse{50%{opacity:.35}}
+
+/* ships: outer = position on the track, .sink = water weight, .bob = idle bobbing */
+.ship{position:absolute;left:10%;transform:translateX(-50%);transition:left 2.5s ease-in-out}
+.sink{transition:transform 2s ease}
+.bob{animation:bob 3.2s ease-in-out infinite;transform-origin:50% 85%}
+#ghostShip .bob{animation:bobGhost 5.5s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-5px) rotate(1.5deg)}}
+@keyframes bobGhost{0%,100%{transform:translateY(0) rotate(1deg)}50%{transform:translateY(-9px) rotate(-1deg)}}
+#ghostShip .art{opacity:var(--ghost-op,.72);filter:drop-shadow(0 0 10px rgba(166,240,198,.55))}
+#ghostShip.glowing .art{animation:glow 2s ease-in-out infinite}
+@keyframes glow{0%,100%{filter:drop-shadow(0 0 10px rgba(166,240,198,.6)) brightness(1.05)}50%{filter:drop-shadow(0 0 28px rgba(190,255,215,.95)) brightness(1.4)}}
+.art img,.art svg{display:block;width:100%;height:auto}
+.tag{position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-size:12px;font-weight:800;padding:3px 9px;border-radius:999px;background:rgba(6,16,32,.78);border:1px solid rgba(255,255,255,.15)}
+#ghostTag{bottom:100%;margin-bottom:6px;color:var(--ghost)}
+#playerTag{left:10%;bottom:12px;z-index:10;color:var(--gold2);display:flex;align-items:center;gap:6px;transition:left 2.5s ease-in-out}
+.gauge{display:inline-block;width:46px;height:8px;border-radius:4px;background:rgba(255,255,255,.18);overflow:hidden}
+.gauge i{display:block;height:100%;background:var(--water);transition:width 1.5s}
+
+/* celebration particles */
+#fx i{position:absolute;width:7px;height:7px;border-radius:50%;opacity:0;animation:burst 1.5s ease-out forwards}
+@keyframes burst{0%{transform:translate(0,0) scale(1.2);opacity:1}100%{transform:translate(var(--dx),var(--dy)) scale(.3);opacity:0}}
+#fx b{position:absolute;width:40px;height:40px;border-radius:50%;background:rgba(240,240,240,.85);opacity:0;animation:puff 2.4s ease-out forwards}
+@keyframes puff{0%{transform:translate(-50%,-50%) scale(.3);opacity:.95}100%{transform:translate(calc(-50% + var(--dx)),calc(-50% - 60px)) scale(2.4);opacity:0}}
+
+/* ============================================================
+   TODAY: status, timer, buttons, log, summary
+   ============================================================ */
+.status-row{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:16px 4px 2px;flex-wrap:wrap}
+.status{font:700 30px/1.2 var(--serif)}
+.status b.behind{color:var(--bad)}
+.status b.ahead{color:var(--good)}
+.clock{font:700 30px/1 var(--mono);color:var(--gold2)}
+.clock small{font:500 15px system-ui,sans-serif;color:var(--muted);margin-right:10px}
+.substatus{color:var(--muted);margin:2px 4px 14px;font-size:15px}
+.controls{display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
+.timer{text-align:center;display:flex;flex-direction:column;justify-content:center}
+.timer .lbl{color:var(--muted);font-weight:800;letter-spacing:1px;text-transform:uppercase;font-size:14px}
+.timer .big{font:700 64px/1.05 var(--mono);margin:4px 0}
+.timer.running .big{color:var(--gold2)}
+.timer.over .big{color:var(--bad)}
+.timer .msg{min-height:24px;font-weight:700;color:var(--muted);font-size:14px}
+.timer.over .msg{color:#fff;background:var(--bad);border-radius:10px;padding:7px 10px;font-size:17px;animation:flash 1.1s steps(2,start) infinite}
+@keyframes flash{50%{opacity:.35}}
+.btns{display:grid;grid-template-columns:1.3fr 1fr 1fr .8fr;gap:12px}
+.big-btn{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-height:132px;border-radius:16px;border:2px solid transparent;font-weight:800;font-size:20px;letter-spacing:.6px;transition:transform .08s,filter .15s}
+.big-btn:hover{filter:brightness(1.1)}
+.big-btn:active{transform:scale(.97)}
+.big-btn kbd{position:absolute;top:8px;right:10px;font:700 12px var(--mono);padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.3)}
+.big-btn .count{font-size:14px;font-weight:700;opacity:.85}
+.b-session{background:linear-gradient(#f0c75a,#d9a335);color:#2a1a05}
+.b-session.running{background:linear-gradient(#ef8a74,#d4604c);color:#2a0a05}
+.b-question{background:#2b3f63;border-color:var(--gold);color:var(--gold2)}
+.b-leak{background:#163f5c;border-color:var(--water);color:#bfe6ff}
+.b-undo{background:var(--panel);border-color:var(--line);color:var(--muted);font-size:17px}
+.icon{width:34px;height:34px;display:inline-block}
+.icon.art img,.icon.art svg{width:100%;height:100%;object-fit:contain}
+.icon.sm{width:18px;height:18px;vertical-align:-4px;margin-right:4px}
+.leaknote{margin-top:12px;display:flex;gap:10px;align-items:center}
+.leaknote input{flex:1;font-size:17px;padding:12px 14px;border-radius:12px;border:2px solid var(--water);background:#0d223f;color:var(--ink);outline:none}
+.leaknote span{color:var(--muted);font-size:14px;white-space:nowrap}
+.cols{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;margin-top:16px}
+.log{list-style:none;margin:0;padding:0;max-height:430px;overflow:auto}
+.log li{display:flex;align-items:center;gap:12px;padding:8px 4px;border-bottom:1px solid rgba(255,255,255,.06)}
+.log .t{font:600 15px var(--mono);color:var(--muted);min-width:118px}
+.log .what{flex:1}
+.log .note{color:var(--muted);font-style:italic}
+.pill{font-size:12px;font-weight:800;padding:2px 8px;border-radius:999px;margin-left:6px;white-space:nowrap}
+.pill.short{background:#4a2d2d;color:#ffb4a6}
+.pill.auto{background:#2d3a4a;color:#b9c9de}
+.pill.run{background:#4a3d16;color:var(--gold2)}
+.log .del{background:none;border:none;color:var(--dim);font-size:16px;padding:4px 8px;border-radius:8px}
+.log .del:hover{color:var(--bad);background:rgba(239,123,103,.12)}
+.empty{color:var(--dim);padding:10px 4px}
+.summary dl{display:grid;grid-template-columns:auto 1fr;gap:9px 16px;margin:0}
+.summary dt{color:var(--muted)}
+.summary dd{margin:0;font-weight:700;text-align:right}
+
+/* ============================================================
+   LOGBOOK
+   ============================================================ */
+.streaks{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.streak{flex:1;min-width:200px}
+.streak .n{font:700 46px/1 var(--serif);color:var(--gold2)}
+.streak .l{color:var(--muted);font-weight:600}
+.legend{color:var(--muted);font-size:14px;align-self:center}
+table.book{width:100%;border-collapse:collapse;font-size:16px}
+.book th{text-align:left;color:var(--muted);font-weight:700;font-size:13px;letter-spacing:.6px;text-transform:uppercase;padding:10px 12px;border-bottom:2px solid var(--line)}
+.book td{padding:11px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
+.book td.num{font-family:var(--mono)}
+.book td.res{font-size:22px}
+.book tr:hover td{background:rgba(255,255,255,.03)}
+
+/* ============================================================
+   COMPARE (charts)
+   ============================================================ */
+.charts{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.charts .wide{grid-column:1/-1}
+.chart-sub{color:var(--muted);font-size:14px;margin:-6px 0 8px}
+svg.chart{width:100%;height:auto;display:block;overflow:visible}
+.chart .grid{stroke:rgba(255,255,255,.08);stroke-width:1}
+.chart .base{stroke:rgba(255,255,255,.25);stroke-width:1}
+.chart .ax{fill:var(--muted);font-size:11px}
+.chart .ax.today{fill:var(--gold2);font-weight:700}
+.chart .ref{stroke:var(--ink);stroke-width:2;opacity:.75}
+.chart .ref.dash{stroke-dasharray:6 5}
+.chart .reflbl{fill:var(--ink);font-size:11px;font-weight:700;opacity:.85}
+.chart .hit{fill:transparent}
+.chart .hit:hover{fill:rgba(255,255,255,.05)}
+.chart .cell{stroke:var(--panel);stroke-width:2}
+.chart .celltxt{font-size:11px;font-weight:700;pointer-events:none}
+#tip{position:fixed;z-index:60;pointer-events:none;background:#06101f;border:1px solid var(--line);color:var(--ink);padding:6px 10px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 16px #0008}
+
+/* ============================================================
+   SETTINGS modal + toast
+   ============================================================ */
+.modal{position:fixed;inset:0;background:rgba(3,8,18,.72);display:flex;align-items:flex-start;justify-content:center;z-index:50;padding:40px 16px;overflow:auto}
+.sheet{width:min(780px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px 24px}
+.sheet h3{font:700 16px var(--serif);color:var(--gold2);margin:20px 0 10px}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 22px}
+.form-grid label{display:flex;justify-content:space-between;align-items:center;gap:10px;color:var(--muted)}
+.form-grid input{width:104px;font:600 15px var(--mono);padding:7px 9px;border-radius:9px;border:1px solid var(--line);background:#0b1d38;color:var(--ink)}
+.preview{margin-top:12px;color:var(--ink);font-weight:600}
+.err{color:var(--bad);font-weight:700;min-height:20px;margin-top:6px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.sheet .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+.primary-btn{background:var(--gold);color:#2a1a05;border:none;border-radius:10px;padding:9px 18px;font-weight:800}
+.artlist{display:grid;grid-template-columns:1fr 1fr;gap:4px 22px;font-size:14px;color:var(--muted)}
+.artlist .ok{color:var(--good)}
+#toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,30px);opacity:0;z-index:70;background:#06101f;border:1px solid var(--gold);color:var(--ink);padding:10px 18px;border-radius:12px;font-weight:700;transition:all .25s;pointer-events:none}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+
+@media (max-width:1050px){
+  .controls,.cols,.charts{grid-template-columns:1fr}
+  .btns{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>The Flying Dutchman Race</h1>
+  <nav class="tabs">
+    <button data-tab="today" class="active">TODAY</button>
+    <button data-tab="logbook">LOGBOOK</button>
+    <button data-tab="compare">COMPARE</button>
+  </nav>
+  <div class="hdr-right">
+    <button class="chip-btn" id="btnExport" title="Download a JSON backup">Export</button>
+    <button class="chip-btn" id="btnImport" title="Merge a JSON backup into this browser">Import</button>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
+    <button class="chip-btn gear" id="btnSettings" title="Settings">⚙</button>
+  </div>
+</header>
+
+<main>
+  <!-- ======================= TAB 1: TODAY ======================= -->
+  <section id="tab-today">
+    <div id="scene">
+      <div id="sky"></div>
+      <div id="sun" class="celestial"><div data-art="sun"></div></div>
+      <div id="moon" class="celestial"><div data-art="moon"></div></div>
+      <div id="markers"></div>
+      <div id="seaBase"></div>
+      <div id="waveBack" class="wave"></div>
+      <div id="island"><div data-art="island"></div></div>
+      <div id="ghostShip" class="ship">
+        <div class="tag" id="ghostTag"></div>
+        <div class="sink"><div class="bob"><div data-art="dutchman"></div></div></div>
+      </div>
+      <div id="waveMid" class="wave"></div>
+      <div id="buoy"><div data-art="buoy"></div></div>
+      <div id="playerShip" class="ship">
+        <div class="sink"><div class="bob"><div data-art="ship"></div></div></div>
+      </div>
+      <div id="waveFront" class="wave"></div>
+      <div class="tag" id="playerTag"></div>
+      <div id="banner" hidden>
+        <div data-art="celebrate" class="celebrate-art"></div><div class="txt"></div>
+        <button class="quest-btn" id="btnQuest" title="Keep sailing past the island">⛵ Sail on: Extra Quest →</button>
+      </div>
+      <div id="questBadge" hidden><div class="ttl"></div><div class="stars"></div></div>
+      <div id="fx"></div>
+    </div>
+
+    <div class="status-row">
+      <div class="status" id="status"></div>
+      <div class="clock" id="clock"></div>
+    </div>
+    <div class="substatus" id="substatus"></div>
+
+    <div class="controls">
+      <div class="card timer" id="timer">
+        <div class="lbl" id="timerLabel">Ready</div>
+        <div class="big" id="timerBig">50:00</div>
+        <div class="msg" id="timerMsg"></div>
+      </div>
+      <div>
+        <div class="btns">
+          <button class="big-btn b-session" id="btnSession"><span class="lbl">START SESSION</span><kbd>S</kbd></button>
+          <button class="big-btn b-question" id="btnQuestion"><span class="icon" data-art="doubloon"></span><span>+1 QUESTION</span><span class="count" id="qCount">0 today</span><kbd>Q</kbd></button>
+          <button class="big-btn b-leak" id="btnLeak"><span class="icon" data-art="leak"></span><span>LEAK</span><span class="count" id="lCount">0 today</span><kbd>L</kbd></button>
+          <button class="big-btn b-undo" id="btnUndo"><span>UNDO LAST</span><kbd>U</kbd></button>
+        </div>
+        <div class="leaknote" id="leakNoteRow" hidden>
+          <input id="leakNote" maxlength="160" placeholder="What pulled you away? (optional)" autocomplete="off">
+          <span>Enter to save · Esc to skip</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div class="card"><h2>Today's log</h2><ul class="log" id="log"></ul></div>
+      <div class="card summary"><h2>Day summary</h2><dl id="summary"></dl></div>
+    </div>
+  </section>
+
+  <!-- ======================= TAB 2: LOGBOOK ======================= -->
+  <section id="tab-logbook" hidden>
+    <div class="streaks">
+      <div class="card streak"><div class="n" id="streakCur">0</div><div class="l">Current streak of pass days</div></div>
+      <div class="card streak"><div class="n" id="streakBest">0</div><div class="l">Best streak</div></div>
+      <div class="legend" id="bookLegend"></div>
+    </div>
+    <div class="card">
+      <table class="book">
+        <thead><tr><th>Date</th><th>First session</th><th>Sessions</th><th>Questions</th><th>Leaks</th><th>Finish time</th><th>Beat the Dutchman?</th></tr></thead>
+        <tbody id="bookBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ======================= TAB 3: COMPARE ======================= -->
+  <section id="tab-compare" hidden>
+    <div class="charts">
+      <div class="card"><h2>Sessions per day</h2><div class="chart-sub" id="subSessions"></div><div id="chSessions"></div></div>
+      <div class="card"><h2>Questions per day</h2><div class="chart-sub" id="subQuestions"></div><div id="chQuestions"></div></div>
+      <div class="card"><h2>First session start</h2><div class="chart-sub" id="subStarts"></div><div id="chStarts"></div></div>
+      <div class="card"><h2>Leaks per day</h2><div class="chart-sub" id="subLeaks"></div><div id="chLeaks"></div></div>
+      <div class="card wide"><h2>Leak map</h2><div class="chart-sub" id="subLeakMap"></div><div id="chLeakMap"></div></div>
+    </div>
+  </section>
+</main>
+
+<!-- ======================= SETTINGS ======================= -->
+<div class="modal" id="settings" hidden>
+  <div class="sheet">
+    <h2>Settings</h2>
+    <h3>The Dutchman's perfect day</h3>
+    <div class="form-grid" id="settingsForm"></div>
+    <div class="preview" id="settingsPreview"></div>
+    <div class="err" id="settingsErr"></div>
+    <div class="actions">
+      <button class="chip-btn" id="btnDefaults">Restore defaults</button>
+      <button class="chip-btn" id="btnCancel">Cancel</button>
+      <button class="primary-btn" id="btnSave">Save</button>
+    </div>
+    <h3>Data</h3>
+    <div class="row">
+      <button class="chip-btn" id="btnDemo">Load demo data</button>
+      <button class="chip-btn danger" id="btnResetToday">Reset today…</button>
+      <span class="legend">Demo data fills the 5 days before today so you can see the Logbook and Compare tabs. Clearing it only removes demo entries.</span>
+    </div>
+    <h3>Notifications</h3>
+    <div class="row">
+      <button class="chip-btn" id="btnNotify">Turn on end-of-session notifications</button>
+      <span class="legend" id="notifyNote">Pops up a desktop notification at 50:00 when this window isn't in front.</span>
+    </div>
+    <h3>Art (from the <code>art/</code> folder next to this file)</h3>
+    <div class="artlist" id="artList"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="tip" hidden></div>
+
+<script>
+'use strict';
+
+/* ============================================================
+   CONFIG: the Flying Dutchman's "perfect day".
+   These are the defaults. Changes made in Settings (⚙) are
+   saved in the browser and override these.
+   ============================================================ */
+const CONFIG = {
+  start: '08:00',        // the ghost sets sail
+  sessionMin: 50,        // session length
+  minSessionMin: 40,     // a session must last this long to count as completed
+  breakMin: 10,          // normal break
+  lunchMin: 40,          // lunch break...
+  lunchAfter: 4,         // ...after this session
+  dinnerMin: 40,         // dinner break...
+  dinnerAfter: 8,        // ...after this session
+  target: 10,            // sessions to reach the island
+  floor: 7,              // a "pass" day
+  ghostBufferMin: 30,    // ghost finishes this many minutes after a perfect day
+  rolloverHour: 4,       // a study day runs 04:00 → 03:59
+  leakPct: 10,           // water per leak
+  behindPct: 15,         // water per full session behind the ghost
+};
+
+/* ============================================================
+   ART: put image files in a folder called "art" next to this
+   HTML file, using these names. Any file that's missing falls
+   back to a simple placeholder shape, so the game always works.
+   ============================================================ */
+const ART = {
+  folder: 'art/',
+  files: {
+    ship: 'ship.png',            // your leaky pirate ship, side view, facing right
+    dutchman: 'dutchman.png',    // the ghost ship, side view, facing right
+    island: 'island.png',        // treasure island (finish line)
+    buoy: 'buoy.png',            // start buoy
+    waveBack: 'wave-back.png',   // horizontally seamless wave strips (back → front)
+    waveMid: 'wave-mid.png',
+    waveFront: 'wave-front.png',
+    doubloon: 'doubloon.png',    // gold coin icon
+    leak: 'leak.png',            // water droplet icon
+    celebrate: 'celebrate.png',  // optional: shown above the "You outran..." banner
+    sun: 'sun.png',              // optional
+    moon: 'moon.png',            // optional
+  },
+  ghostOpacity: 0.72,            // the ghost image is drawn see-through at this opacity
+};
+
+const STORE_KEY = 'dutchmanRace_v1';
+const EVENT_TYPES = ['start', 'finish', 'question', 'leak'];
+const RESULT = {
+  beat: { icon: '✅', text: 'Beat the Dutchman' },
+  pass: { icon: '⚓', text: 'Pass day' },
+  fail: { icon: '☠️', text: 'Under the floor' },
+};
+const START_X = 10, FINISH_X = 84;   // track start/finish as % of the scene width
+
+/* ---------- tiny helpers ---------- */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const pad = n => String(n).padStart(2, '0');
+const uid = () => Math.random().toString(36).slice(2, 10);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const tms = e => +new Date(e.t);
+const fmtHM = ms => { const d = new Date(ms); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+const fmtMS = sec => { sec = Math.max(0, Math.floor(sec)); return pad(Math.floor(sec / 60)) + ':' + pad(sec % 60); };
+const fmtDur = min => { min = Math.round(min); const h = Math.floor(min / 60), m = min % 60; return h ? `${h}h ${pad(m)}m` : `${m}m`; };
+const fmtStars = n => (Math.floor(n) || (n % 1 ? '' : '0')) + (n % 1 ? '½' : '');   // 2.5 → "2½", 0.5 → "½"
+const starWord = n => `${fmtStars(n)} star${n === 1 ? '' : 's'}`;
+const fmtMinOfDay = m => pad(Math.floor(m / 60) % 24) + ':' + pad(Math.round(m % 60));
+
+/* ============================================================
+   STORAGE: everything lives under one localStorage key.
+   { days: { "2026-11-05": { events: [ {id,type,t,note?,auto?,demo?} ] } }, config: {...} }
+   ============================================================ */
+let store = loadStore();
+
+function loadStore() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(STORE_KEY)); } catch (e) { s = null; }
+  if (!s || typeof s !== 'object') s = {};
+  if (!s.days || typeof s.days !== 'object') s.days = {};
+  s.config = Object.assign({}, CONFIG, s.config || {});
+  for (const k of Object.keys(s.days)) {
+    const d = s.days[k];
+    if (!d || !Array.isArray(d.events)) { s.days[k] = { events: [] }; continue; }
+    d.events = d.events.filter(e => e && EVENT_TYPES.includes(e.type) && !isNaN(tms(e)));
+    d.events.forEach(e => { if (!e.id) e.id = uid(); });
+  }
+  return s;
+}
+function saveStore() {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(store)); }
+  catch (e) { toast('Could not save: ' + e.message); }
+}
+const cfg = () => store.config;
+
+/* ============================================================
+   STUDY DAYS: a day runs 04:00 → 03:59 next morning.
+   ============================================================ */
+const keyOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dateOfKey = k => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (k, n) => { const d = dateOfKey(k); d.setDate(d.getDate() + n); return keyOf(d); };
+const dateLabel = k => dateOfKey(k).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+function dayKeyOf(t) {
+  const d = new Date(t);
+  if (d.getHours() < cfg().rolloverHour) d.setDate(d.getDate() - 1);
+  return keyOf(d);
+}
+const todayKey = () => dayKeyOf(Date.now());
+function dayBounds(k) {
+  const d = dateOfKey(k), r = cfg().rolloverHour;
+  return {
+    start: +new Date(d.getFullYear(), d.getMonth(), d.getDate(), r),
+    end: +new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, r),
+  };
+}
+
+/* ============================================================
+   THE GHOST: sails the perfect day, stretched so it finishes
+   ghostBufferMin later. Moves during sessions, stops in breaks.
+   ============================================================ */
+function ghostPlan(key, c = cfg()) {
+  const segs = [];
+  for (let i = 1; i <= c.target; i++) {
+    segs.push({ kind: 'session', min: c.sessionMin });
+    if (i < c.target) segs.push({ kind: 'break', min: i === c.lunchAfter ? c.lunchMin : i === c.dinnerAfter ? c.dinnerMin : c.breakMin });
+  }
+  const perfect = segs.reduce((a, s) => a + s.min, 0);
+  const stretch = (perfect + c.ghostBufferMin) / perfect;
+  const [hh, mm] = c.start.split(':').map(Number);
+  const base = dateOfKey(key);
+  if (hh < c.rolloverHour) base.setDate(base.getDate() + 1);
+  base.setHours(hh, mm, 0, 0);
+  const startMs = +base;
+  return { segs, perfect, stretch, startMs, perfectFinishMs: startMs + perfect * 60000, finishMs: startMs + (perfect + c.ghostBufferMin) * 60000 };
+}
+function ghostPos(plan, nowMs) {
+  let el = (nowMs - plan.startMs) / 60000 / plan.stretch;   // minutes into the (unstretched) perfect day
+  if (el <= 0) return 0;
+  let pos = 0;
+  for (const s of plan.segs) {
+    if (el < s.min) return s.kind === 'session' ? pos + el / s.min : pos;
+    el -= s.min;
+    if (s.kind === 'session') pos += 1;
+  }
+  return pos;
+}
+
+/* ============================================================
+   DERIVE A DAY: pair start/finish events into sessions and
+   work out everything the screens need.
+   ============================================================ */
+function deriveDay(key, now = Date.now()) {
+  const c = cfg();
+  const evs = (store.days[key]?.events || []).slice().sort((a, b) => tms(a) - tms(b));
+  const { end: dayEnd } = dayBounds(key);
+  const sessions = [], orphans = [], leaks = [], questions = [];
+  let open = null;
+  for (const e of evs) {
+    const t = tms(e);
+    if (e.type === 'start') {
+      if (open) { open.end = t; open.auto = true; sessions.push(open); }   // two starts in a row: close the first
+      open = { start: t, startId: e.id };
+    } else if (e.type === 'finish') {
+      if (open) { open.end = t; open.finishId = e.id; open.auto = !!e.auto; sessions.push(open); open = null; }
+      else orphans.push(e);
+    } else if (e.type === 'question') questions.push(e);
+    else if (e.type === 'leak') leaks.push(e);
+  }
+  if (open) {
+    if (now >= dayEnd) { open.end = dayEnd; open.auto = true; open.openAtEnd = true; }
+    else open.running = true;
+    sessions.push(open);
+  }
+  let completed = 0;
+  for (const s of sessions) {
+    s.min = ((s.running ? now : s.end) - s.start) / 60000;
+    s.completed = !s.running && s.min >= c.minSessionMin;
+    s.short = !s.running && !s.completed;
+    if (s.completed) s.num = ++completed;
+  }
+  const running = sessions.find(s => s.running) || null;
+  const done = sessions.filter(s => !s.running);
+  const completedList = sessions.filter(s => s.completed);
+  const targetEnd = completedList.length >= c.target ? completedList[c.target - 1].end : null;
+  const lastEnd = done.length ? Math.max(...done.map(s => s.end)) : null;
+  let onDeck = 0, breaks = 0;
+  sessions.forEach((s, i) => {
+    onDeck += s.min;
+    if (i > 0) breaks += Math.max(0, s.start - sessions[i - 1].end) / 60000;
+  });
+  const runFrac = running ? Math.min(running.min / c.sessionMin, 1) : 0;
+  const plan = ghostPlan(key);
+  const beat = targetEnd != null && targetEnd <= plan.finishMs;
+  // EXTRA QUEST: every session after the island earns a star by length:
+  // a full session (50 min) = ★, half a session (25 min) = ½★, shorter = nothing
+  const extras = targetEnd == null ? [] : sessions.filter(s => s.start >= targetEnd);
+  extras.forEach((s, i) => {
+    s.extraIdx = i + 1;
+    s.star = s.running ? 0 : s.min >= c.sessionMin ? 1 : s.min >= c.sessionMin / 2 ? 0.5 : 0;
+  });
+  const extraStars = extras.reduce((a, s) => a + s.star, 0);
+  const extraPos = extraStars + (running && running.extraIdx ? runFrac : 0);
+  const quest = completed >= c.target && (!!store.days[key]?.quest || extras.length > 0);
+  return {
+    extras, extraStars, extraPos, quest,
+    key, events: evs, sessions, orphans, leaks, questions, running, completed,
+    targetEnd, lastEnd, firstStart: sessions.length ? sessions[0].start : null,
+    finishTime: targetEnd ?? lastEnd, onDeck, breaks,
+    playerPos: Math.min(completed + runFrac, c.target),
+    plan, beat, result: beat ? 'beat' : completed >= c.floor ? 'pass' : 'fail', dayEnd,
+  };
+}
+function waterLevel(d, ghost) {
+  const c = cfg();
+  const behind = Math.max(0, ghost - d.playerPos);
+  return Math.min(100, d.leaks.length * c.leakPct + Math.floor(behind + 1e-9) * c.behindPct);
+}
+
+/* A session still open when its day rolled over at 04:00 is finished at 04:00 and marked auto-closed. */
+function autoCloseOld() {
+  const tk = todayKey();
+  let changed = false;
+  for (const k of Object.keys(store.days)) {
+    if (k >= tk) continue;
+    const d = deriveDay(k);
+    if (d.sessions.some(s => s.openAtEnd)) {
+      store.days[k].events.push({ id: uid(), type: 'finish', t: new Date(d.dayEnd).toISOString(), auto: true });
+      changed = true;
+    }
+  }
+  if (changed) saveStore();
+}
+
+/* ============================================================
+   ART LOADING (image if present, placeholder otherwise)
+   ============================================================ */
+const PLACEHOLDER = {
+  ship: `<svg viewBox="0 0 160 130"><path d="M8 84h144l-20 34H28z" fill="#8a5a2b"/><rect x="40" y="93" width="16" height="11" fill="#c49a5b"/><rect x="98" y="91" width="14" height="12" fill="#c49a5b"/><rect x="78" y="10" width="5" height="76" fill="#5a3a1c"/><path d="M84 18v58l44-6z" fill="#efe2c2"/><path d="M77 26v50l-36-4z" fill="#e3d3ad"/><rect x="81" y="3" width="18" height="11" fill="#1a1a1a"/></svg>`,
+  dutchman: `<svg viewBox="0 0 160 130"><path d="M8 84h144l-20 34H28z" fill="#7fcfa5"/><rect x="78" y="8" width="5" height="78" fill="#5c9c7c"/><path d="M84 16v60l44-6-6-8 4-10-6-8 4-12z" fill="#d6ffe9"/><path d="M77 24v52l-36-4 5-9-4-9 5-10z" fill="#c4f5da"/></svg>`,
+  island: `<svg viewBox="0 0 200 160"><ellipse cx="110" cy="146" rx="94" ry="24" fill="#e6c27a"/><path d="M122 140q-8-50 4-92" stroke="#7a4f24" stroke-width="7" fill="none" stroke-linecap="round"/><path d="M126 48q-30-16-56 2q30-2 56-2q-6-30-36-36q28 6 36 36q20-26 52-20q-32 4-52 20q36-4 56 16q-30-14-56-16z" fill="#3f9d57"/><rect x="58" y="124" width="34" height="22" rx="3" fill="#8a5a2b" stroke="#e9b949" stroke-width="3"/></svg>`,
+  buoy: `<svg viewBox="0 0 40 80"><rect x="18" y="4" width="4" height="42" fill="#ddd"/><circle cx="20" cy="8" r="5" fill="#ffdf6b"/><path d="M6 44h28l-4 26H10z" fill="#d64b3c"/><rect x="6" y="52" width="28" height="7" fill="#fff"/></svg>`,
+  doubloon: `<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="14" fill="#e9b949" stroke="#a87b1c" stroke-width="2"/><circle cx="16" cy="16" r="9" fill="none" stroke="#a87b1c" stroke-width="1.5"/></svg>`,
+  leak: `<svg viewBox="0 0 32 32"><path d="M16 3C12 10 7 15 7 20a9 9 0 0 0 18 0c0-5-5-10-9-17z" fill="#4fb3e8"/></svg>`,
+  sun: `<div class="ph-sun"></div>`,
+  moon: `<div class="ph-moon"></div>`,
+  celebrate: '',
+};
+const artStatus = {};   // slot -> true (image loaded) / false (placeholder)
+
+function mountArt(el) {
+  const slot = el.dataset.art;
+  el.classList.add('art');
+  el.innerHTML = PLACEHOLDER[slot] || '';
+  const file = ART.files[slot];
+  if (!file) return;
+  const img = new Image();
+  img.alt = ''; img.draggable = false;
+  img.onload = () => { el.innerHTML = ''; el.appendChild(img); artStatus[slot] = true; };
+  img.onerror = () => { if (artStatus[slot] !== true) artStatus[slot] = false; };
+  img.src = ART.folder + file;
+}
+
+/* Waves: a strip wider than the scene that slides left by exactly one tile, forever. */
+function waveSVG(color, h) {
+  const w = 320, a = 16;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><path d="M0 ${a} Q${w / 4} 0 ${w / 2} ${a} T${w} ${a} V${h} H0Z" fill="${color}"/></svg>`;
+  return { url: 'data:image/svg+xml,' + encodeURIComponent(svg), w, h };
+}
+function setupWave(id, slot, color, seconds, dir) {
+  const wrap = document.getElementById(id);
+  const strip = document.createElement('div');
+  strip.className = 'strip';
+  wrap.appendChild(strip);
+  const apply = (url, natW, natH) => {
+    const h = wrap.clientHeight || 80;
+    const tile = Math.max(40, Math.round(natW * h / natH));
+    strip.style.backgroundImage = `url("${url}")`;
+    strip.style.backgroundSize = `${tile}px ${h}px`;
+    strip.style.width = `calc(100% + ${tile}px)`;
+    if (strip._anim) strip._anim.cancel();
+    const a = 'translateX(0)', b = `translateX(-${tile}px)`;
+    strip._anim = strip.animate([{ transform: dir > 0 ? a : b }, { transform: dir > 0 ? b : a }], { duration: seconds * 1000, iterations: Infinity });
+  };
+  const fb = waveSVG(color, wrap.clientHeight || 80);
+  apply(fb.url, fb.w, fb.h);
+  const img = new Image();
+  img.onload = () => { artStatus[slot] = true; apply(img.src, img.naturalWidth, img.naturalHeight); };
+  img.onerror = () => { artStatus[slot] = false; };
+  img.src = ART.folder + ART.files[slot];
+}
+
+/* Sky colour by time of day: dawn ~8, bright midday, sunset ~18, night after 20. */
+const SKY = [
+  [0, '#0a1028', '#1a2248'], [5, '#0d1532', '#272a58'], [6.5, '#39488a', '#e69c84'],
+  [8, '#6b98d6', '#f6cfa3'], [11, '#3d93d8', '#bde3fb'], [15.5, '#4a9cda', '#cfe9f6'],
+  [17.5, '#5b6db3', '#f3ae6e'], [18.5, '#3d3979', '#ee7e50'], [19.6, '#222452', '#86496b'],
+  [20.5, '#0e1432', '#252a54'], [24, '#0a1028', '#1a2248'],
+];
+function lerpHex(a, b, t) {
+  const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const A = p(a), B = p(b);
+  return '#' + A.map((v, i) => pad(Math.round(v + (B[i] - v) * t).toString(16))).join('');
+}
+function renderSky(now) {
+  const d = new Date(now), h = d.getHours() + d.getMinutes() / 60;
+  let i = 0;
+  while (i < SKY.length - 2 && h >= SKY[i + 1][0]) i++;
+  const [h0, t0, b0] = SKY[i], [h1, t1, b1] = SKY[i + 1];
+  const t = clamp((h - h0) / (h1 - h0), 0, 1);
+  $('#sky').style.background = `linear-gradient(${lerpHex(t0, t1, t)}, ${lerpHex(b0, b1, t)})`;
+  const SUNRISE = 6, SUNSET = 19.7;
+  const sunUp = h >= SUNRISE && h < SUNSET;
+  const f = sunUp ? (h - SUNRISE) / (SUNSET - SUNRISE) : ((h < SUNRISE ? h + 24 : h) - SUNSET) / (24 + SUNRISE - SUNSET);
+  const body = sunUp ? $('#sun') : $('#moon');
+  $('#sun').hidden = !sunUp; $('#moon').hidden = sunUp;
+  body.style.left = (10 + f * 70) + '%';
+  body.style.top = (178 - Math.sin(Math.PI * f) * 140) + 'px';
+}
+
+/* ============================================================
+   SOUND: a short triple beep at the end of a session.
+   ============================================================ */
+let audioCtx = null;
+const beeped = new Set();
+function ensureAudio() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) { /* no audio available */ }
+}
+function beep() {
+  ensureAudio();
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime;
+  [0, 0.28, 0.56].forEach((dt, i) => {
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.value = i === 2 ? 1175 : 880;
+    g.gain.setValueAtTime(0.0001, t0 + dt);
+    g.gain.exponentialRampToValueAtTime(0.35, t0 + dt + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.22);
+    o.connect(g).connect(audioCtx.destination);
+    o.start(t0 + dt); o.stop(t0 + dt + 0.25);
+  });
+}
+
+/* Desktop notification at 50:00 (only when the window isn't focused; needs the https version) */
+function notifyStandUp(label) {
+  try {
+    if ('Notification' in window && Notification.permission === 'granted' && !document.hasFocus())
+      new Notification('Stand up. Walk. 10 minutes.', { body: `${label} hit ${cfg().sessionMin}:00. Press S when you finish.`, tag: 'dutchman-session', icon: 'icons/icon-192.png' });
+  } catch (e) { /* notifications unavailable */ }
+}
+function renderNotifyBtn() {
+  const b = $('#btnNotify'), note = $('#notifyNote');
+  const ok = 'Notification' in window && window.isSecureContext;
+  b.disabled = !ok || Notification.permission !== 'default';
+  if (!ok) { b.textContent = 'Notifications unavailable here'; note.textContent = 'They work on the hosted (https) version, e.g. GitHub Pages.'; }
+  else if (Notification.permission === 'granted') b.textContent = 'Notifications on ✓';
+  else if (Notification.permission === 'denied') { b.textContent = 'Notifications blocked'; note.textContent = 'Allow them for this site in your browser settings.'; }
+  else b.textContent = 'Turn on end-of-session notifications';
+}
+
+/* ============================================================
+   ACTIONS
+   ============================================================ */
+function pushEvent(type, extra = {}) {
+  const now = new Date();
+  const key = dayKeyOf(now);
+  const day = store.days[key] || (store.days[key] = { events: [] });
+  const ev = { id: uid(), type, t: now.toISOString(), ...extra };
+  day.events.push(ev);
+  saveStore();
+  renderAll();
+  return ev;
+}
+function toggleSession() {
+  ensureAudio();
+  const c = cfg();
+  const d = deriveDay(todayKey());
+  if (d.running) {
+    const min = (Date.now() - d.running.start) / 60000;
+    pushEvent('finish');
+    const m = Math.round(min), full = c.sessionMin, half = c.sessionMin / 2;
+    if (d.running.extraIdx) toast(min >= full ? `★ Full star · ${m} min` : min >= half ? `½ star · ${m} min (${full} min for a full star)` : `No star · ${m} min (${half} min for half a star)`);
+    else toast(min >= c.minSessionMin ? `Session finished · ${m} min` : `Short session (${m} min) · logged, doesn't count`);
+  } else {
+    pushEvent('start');
+    toast(`Session ${d.completed + 1} started. ${c.sessionMin}:00 on the clock`);
+  }
+}
+function addQuestion() {
+  pushEvent('question');
+  toast(`+1 doubloon · ${deriveDay(todayKey()).questions.length} today`);
+}
+let pendingLeakId = null;
+function addLeak() {
+  const ev = pushEvent('leak');
+  pendingLeakId = ev.id;
+  $('#leakNoteRow').hidden = false;
+  const inp = $('#leakNote');
+  inp.value = '';
+  inp.focus();
+  toast(`Leak logged at ${fmtHM(Date.now())}`);
+}
+function closeLeakNote(save) {
+  const inp = $('#leakNote');
+  const id = pendingLeakId;
+  pendingLeakId = null;
+  if (save && id && inp.value.trim()) {
+    const ev = findEvent(id);
+    if (ev) { ev.note = inp.value.trim().slice(0, 160); saveStore(); renderLog(); }
+  }
+  $('#leakNoteRow').hidden = true;
+  inp.blur();
+}
+function findEvent(id) {
+  for (const k of Object.keys(store.days)) {
+    const e = store.days[k].events.find(e => e.id === id);
+    if (e) return e;
+  }
+  return null;
+}
+const ACTION_NAME = { start: 'session start', finish: 'session finish', question: '+1 question', leak: 'leak' };
+function undo() {
+  if (pendingLeakId) closeLeakNote(false);
+  const day = store.days[todayKey()];
+  if (!day || !day.events.length) { toast('Nothing to undo today'); return; }
+  let idx = 0;
+  day.events.forEach((e, i) => { if (tms(e) >= tms(day.events[idx])) idx = i; });
+  const [ev] = day.events.splice(idx, 1);
+  saveStore();
+  renderAll();
+  toast(`Undid ${ACTION_NAME[ev.type]} at ${fmtHM(tms(ev))}`);
+}
+function deleteIds(ids) {
+  for (const k of Object.keys(store.days)) store.days[k].events = store.days[k].events.filter(e => !ids.includes(e.id));
+  saveStore();
+  renderAll();
+}
+
+/* ============================================================
+   RENDER: TODAY
+   ============================================================ */
+const xFor = pos => START_X + (clamp(pos, 0, cfg().target) / cfg().target) * (FINISH_X - START_X);
+
+/* Extra quest track: open sea past the island, always a couple of segments ahead of you */
+const Q_START = 22, Q_END = 93, Q_GHOST_X = 11;
+const questSlots = d => Math.max(5, Math.floor(d.extraPos) + 2);
+const xQuest = (p, n) => Q_START + (clamp(p, 0, n) / n) * (Q_END - Q_START);
+
+let markersSig = '';
+function renderMarkers(d) {
+  const n = d.quest ? questSlots(d) : cfg().target;
+  const sig = (d.quest ? 'q' : 'r') + n;
+  if (sig === markersSig) return;   // only rebuild when the track changes
+  markersSig = sig;
+  let h;
+  if (d.quest) {
+    h = `<div class="marker start" style="left:${Q_START}%"><span>ISLAND</span></div>`;
+    for (let i = 1; i <= n; i++) h += `<div class="marker" style="left:${xQuest(i, n)}%"><span>+${i}</span></div>`;
+  } else {
+    h = `<div class="marker start" style="left:${START_X}%"><span>START</span></div>`;
+    for (let i = 1; i <= n; i++) h += `<div class="marker${i === n ? ' finish' : ''}" style="left:${xFor(i)}%"><span>${i}</span></div>`;
+  }
+  $('#markers').innerHTML = h;
+}
+
+let lastLive = 0;
+function renderLive(now = Date.now()) {
+  lastLive = now;
+  const c = cfg(), d = deriveDay(todayKey(), now), g = ghostPos(d.plan, now);
+  const water = waterLevel(d, g);
+
+  // ships (on the extra quest the ghost is left behind at the island)
+  renderMarkers(d);
+  $('#scene').classList.toggle('quest', d.quest);
+  const px = d.quest ? xQuest(d.extraPos, questSlots(d)) : xFor(d.playerPos);
+  $('#playerShip').style.left = $('#playerTag').style.left = px + '%';
+  $('#ghostShip').style.left = (d.quest ? Q_GHOST_X : xFor(g)) + '%';
+  $('#playerShip .sink').style.transform = `translateY(${(water / 100 * 30).toFixed(1)}px) rotate(${(-water / 100 * 4).toFixed(1)}deg)`;
+  $('#ghostShip').classList.toggle('glowing', g >= c.target);
+  $('#playerTag').innerHTML = `You · ${d.quest ? '★ ' + d.extraPos.toFixed(1) : d.playerPos.toFixed(1)} <span class="gauge" title="Water in the hull"><i style="width:${water}%"></i></span>${water}%`;
+  $('#ghostTag').textContent = d.quest ? 'Flying Dutchman · left behind' : `Flying Dutchman · ${g.toFixed(1)}`;
+  renderSky(now);
+
+  // banner when you reach the island; star tally once you sail on
+  const done = d.completed >= c.target;
+  $('#banner').hidden = !done || d.quest;
+  if (done) $('#banner .txt').textContent = d.beat ? 'You outran the Flying Dutchman!' : 'Island reached. The Dutchman got there first.';
+  $('#questBadge').hidden = !d.quest;
+  if (d.quest) {
+    $('#questBadge .ttl').textContent = 'Extra Quest';
+    const stars = $('#questBadge .stars');
+    // one star per extra session: full, half, or (while sailing) a pulsing one that fills as you go
+    const got = d.extras.filter(s => !s.running && s.star > 0);
+    const halfBanked = d.running && d.running.extraIdx && (now - d.running.start) / 60000 >= c.sessionMin / 2;
+    const sig = got.map(s => s.star).join(',') + '|' + (d.running ? (halfBanked ? 'h' : 'r') : '');
+    if (stars.dataset.sig !== sig) {   // rebuild only when the tally changes, so new stars pop in
+      stars.dataset.sig = sig;
+      stars.innerHTML = got.map(s => `<i class="${s.star < 1 ? 'half' : ''}">★</i>`).join('') +
+        (d.running ? `<i class="ghost${halfBanked ? ' half-on' : ''}">★</i>` : '');
+    }
+  }
+
+  // status line
+  const diff = g - d.playerPos, a = Math.abs(diff).toFixed(1);
+  let st;
+  if (d.quest) st = `Extra quest: <b class="ahead">${starWord(d.extraStars)}</b> past the island`;
+  else if (done) st = d.beat ? `You outran the Dutchman by <b class="ahead">${fmtDur((d.plan.finishMs - d.targetEnd) / 60000)}</b>` : `You made the island · the Dutchman beat you there`;
+  else if (Math.abs(diff) < 0.05) st = `You are <b>level</b> with the Dutchman`;
+  else st = `You are <b>${a}</b> session${a === '1.0' ? '' : 's'} <b class="${diff > 0 ? 'behind' : 'ahead'}">${diff > 0 ? 'behind' : 'ahead of'}</b> the Dutchman`;
+  $('#status').innerHTML = st;
+
+  let sub;
+  if (d.quest) sub = (d.beat ? `You beat the Dutchman by ${fmtDur((d.plan.finishMs - d.targetEnd) / 60000)} and kept sailing.` : `Island reached at ${fmtHM(d.targetEnd)} and you kept sailing.`) + ` Every extra session earns a star: ${c.sessionMin} min = ★, ${c.sessionMin / 2} min = ½★.`;
+  else if (now < d.plan.startMs) sub = `The Dutchman sets sail at ${fmtHM(d.plan.startMs)} and reaches the island at ${fmtHM(d.plan.finishMs)}.`;
+  else if (g < c.target) sub = `The Dutchman reaches the island at ${fmtHM(d.plan.finishMs)} (a perfect day finishes ${fmtHM(d.plan.perfectFinishMs)}).`;
+  else sub = done ? `The Dutchman reached the island at ${fmtHM(d.plan.finishMs)}.` : `The Dutchman reached the island at ${fmtHM(d.plan.finishMs)}. Your race isn't over: keep sailing.`;
+  const behindFull = Math.floor(Math.max(0, diff) + 1e-9);
+  sub += ` Hull water ${water}%: ${d.leaks.length} leak${d.leaks.length === 1 ? '' : 's'} × ${c.leakPct}%` + (behindFull ? ` + ${behindFull} full session${behindFull === 1 ? '' : 's'} behind × ${c.behindPct}%.` : '.');
+  $('#substatus').textContent = sub;
+
+  $('#qCount').textContent = `${d.questions.length} today`;
+  $('#lCount').textContent = `${d.leaks.length} today`;
+  renderSummary(d, g, now);
+}
+
+function renderClock(now = Date.now()) {
+  $('#clock').innerHTML = `<small>${dateLabel(keyOf(new Date(now)))}</small>${fmtHM(now)}`;
+}
+
+function renderTimer(now = Date.now()) {
+  const c = cfg(), d = deriveDay(todayKey(), now), el = $('#timer');
+  const btn = $('#btnSession');
+  btn.classList.toggle('running', !!d.running);
+  btn.querySelector('.lbl').textContent = d.running ? 'FINISH SESSION' : 'START SESSION';
+  el.classList.toggle('running', !!d.running);
+  let over = false;
+  if (d.running) {
+    const left = c.sessionMin * 60 - (now - d.running.start) / 1000;
+    over = left <= 0;
+    const n = d.completed + 1;
+    const xi = d.running.extraIdx, elapsedMin = (now - d.running.start) / 60000;
+    const label = xi ? `Extra quest · session ${xi}` : `Session ${n} of ${c.target}`;
+    $('#timerLabel').textContent = label;
+    $('#timerBig').textContent = over ? '+' + fmtMS(-left) : fmtMS(left);
+    $('#timerMsg').textContent = over ? (xi ? '★ Full star! Stand up. Walk. 10 minutes.' : 'Stand up. Walk. 10 minutes.')
+      : xi ? (elapsedMin >= c.sessionMin / 2 ? `½ star banked · full star at ${c.sessionMin}:00` : `½ star at ${c.sessionMin / 2}:00 · full star at ${c.sessionMin}:00`)
+      : `Started ${fmtHM(d.running.start)} · counts after ${c.minSessionMin} min`;
+    if (over && !beeped.has(d.running.start)) { beeped.add(d.running.start); beep(); notifyStandUp(label); }
+    document.title = over ? '⏰ Stand up! · Dutchman Race' : `${fmtMS(left)} · ${label} · Dutchman Race`;
+  } else {
+    if (d.quest) {
+      $('#timerLabel').textContent = 'Extra quest';
+      $('#timerBig').textContent = `★ ${fmtStars(d.extraStars)}`;
+      $('#timerMsg').textContent = `Press S for extra session ${d.extras.length + 1}`;
+    } else if (d.completed >= c.target) {
+      $('#timerLabel').textContent = 'Island reached';
+      $('#timerBig').textContent = `${c.target}/${c.target}`;
+      $('#timerMsg').textContent = 'Sail on: Extra Quest, or press S';
+    } else if (d.lastEnd) {
+      $('#timerLabel').textContent = 'On break';
+      $('#timerBig').textContent = fmtMS((now - d.lastEnd) / 1000);
+      $('#timerMsg').textContent = `Press S to start session ${d.completed + 1}`;
+    } else {
+      $('#timerLabel').textContent = 'Ready';
+      $('#timerBig').textContent = fmtMS(c.sessionMin * 60);
+      $('#timerMsg').textContent = 'Press S to start session 1';
+    }
+    document.title = 'The Flying Dutchman Race';
+  }
+  el.classList.toggle('over', over);
+}
+
+function renderLog(d = deriveDay(todayKey())) {
+  const items = [];
+  for (const s of d.sessions) {
+    let what;
+    const c = cfg();
+    if (s.running) what = `${s.extraIdx ? `★ Extra quest ${s.extraIdx}` : `Session ${d.completed + 1}`} <span class="pill run">running</span>`;
+    else if (s.extraIdx) what = `★ Extra quest ${s.extraIdx} · ${Math.round(s.min)} min <span class="pill ${s.star ? 'run' : 'short'}">${s.star === 1 ? '★ full star' : s.star ? '½ star' : 'no star · under ' + c.sessionMin / 2 + ' min'}</span>`;
+    else if (s.completed) what = `Session ${s.num} · ${Math.round(s.min)} min`;
+    else what = `Short session · ${Math.round(s.min)} min <span class="pill short">short · doesn't count</span>`;
+    if (s.auto) what += ` <span class="pill auto">auto-closed</span>`;
+    items.push({ t: s.start, time: `${fmtHM(s.start)}–${s.running ? 'now' : fmtHM(s.end)}`, what, ids: [s.startId, s.finishId].filter(Boolean), session: true });
+  }
+  for (const e of d.questions) items.push({ t: tms(e), time: fmtHM(tms(e)), what: `<span class="icon sm" data-art="doubloon"></span>+1 question`, ids: [e.id] });
+  for (const e of d.leaks) items.push({ t: tms(e), time: fmtHM(tms(e)), what: `<span class="icon sm" data-art="leak"></span>Leak${e.note ? ` · <span class="note">${esc(e.note)}</span>` : ''}`, ids: [e.id] });
+  for (const e of d.orphans) items.push({ t: tms(e), time: fmtHM(tms(e)), what: `Finish with no matching start`, ids: [e.id] });
+  items.sort((a, b) => b.t - a.t);
+  const ul = $('#log');
+  ul.innerHTML = items.length
+    ? items.map(it => `<li><span class="t">${it.time}</span><span class="what">${it.what}</span><button class="del" title="Delete" data-del="${it.ids.join(',')}" data-session="${it.session ? 1 : ''}" data-label="${esc(it.time)}">✕</button></li>`).join('')
+    : `<li class="empty">Nothing yet today. Press S to set sail.</li>`;
+  ul.querySelectorAll('[data-art]').forEach(mountArt);
+}
+
+function renderSummary(d, g, now) {
+  const c = cfg();
+  const shortN = d.sessions.filter(s => s.short && !s.extraIdx).length;   // quest sessions have their own stars
+  const curBreak = !d.running && d.lastEnd ? (now - d.lastEnd) / 60000 : 0;
+  let ghostLine;
+  if (d.completed >= c.target) ghostLine = d.beat ? '✅ Yes, you beat it' : '⚓ Finished after it';
+  else if (g >= c.target) ghostLine = `No, it reached the island at ${fmtHM(d.plan.finishMs)}`;
+  else {
+    const diff = g - d.playerPos;
+    ghostLine = Math.abs(diff) < 0.05 ? 'Level' : diff > 0 ? `Behind by ${diff.toFixed(1)}` : `Ahead by ${(-diff).toFixed(1)}`;
+  }
+  const rows = [
+    ['First start', d.firstStart ? fmtHM(d.firstStart) : '—'],
+    ['Sessions', `${Math.min(d.completed, c.target)} / ${c.target}` + (shortN ? ` (+${shortN} short)` : '')],
+    ...(d.quest ? [['Extra quest', `★ ${starWord(d.extraStars)} from ${d.extras.filter(s => !s.running).length} session${d.extras.filter(s => !s.running).length === 1 ? '' : 's'}`]] : []),
+    ['Questions', d.questions.length],
+    ['Leaks', d.leaks.length],
+    ['Time on deck', fmtDur(d.onDeck)],
+    ['Time in breaks', fmtDur(d.breaks) + (curBreak && d.completed < c.target ? ` (+${fmtDur(curBreak)} now)` : '')],
+    ['Beating the Dutchman?', ghostLine],
+    ['Day so far', `${RESULT[d.result].icon} ${RESULT[d.result].text}`],
+  ];
+  $('#summary').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+}
+
+/* ============================================================
+   RENDER: LOGBOOK
+   ============================================================ */
+function isPass(k) { return deriveDay(k).completed >= cfg().floor; }
+function streaks() {
+  const keys = Object.keys(store.days).filter(k => store.days[k].events.length).sort();
+  const tk = todayKey();
+  if (!keys.length) return { current: 0, best: 0 };
+  let best = 0, run = 0;
+  for (let k = keys[0]; k <= tk; k = addDays(k, 1)) {
+    run = isPass(k) ? run + 1 : 0;
+    best = Math.max(best, run);
+  }
+  let cur = 0, k = tk;
+  if (!isPass(k)) k = addDays(k, -1);   // today still in progress: count from yesterday
+  while (isPass(k)) { cur++; k = addDays(k, -1); }
+  return { current: cur, best };
+}
+function renderLogbook() {
+  const c = cfg(), tk = todayKey();
+  const st = streaks();
+  $('#streakCur').textContent = st.current;
+  $('#streakBest').textContent = st.best;
+  $('#bookLegend').innerHTML = `✅ ${c.target} sessions before the Dutchman finished &nbsp;·&nbsp; ⚓ ${c.floor}+ sessions (pass) &nbsp;·&nbsp; ☠️ under ${c.floor}`;
+  const keys = Object.keys(store.days).filter(k => store.days[k].events.length).sort().reverse();
+  $('#bookBody').innerHTML = keys.length ? keys.map(k => {
+    const d = deriveDay(k);
+    const sailing = k === tk && d.result === 'fail';   // today isn't over yet
+    return `<tr>
+      <td>${dateLabel(k)}${k === tk ? ' <span class="pill run">today</span>' : ''}</td>
+      <td class="num">${d.firstStart ? fmtHM(d.firstStart) : '—'}</td>
+      <td class="num">${Math.min(d.completed, c.target)} / ${c.target}${d.extraStars ? ` <span class="pill run" title="Extra quest stars past the island">+${fmtStars(d.extraStars)} ★</span>` : ''}</td>
+      <td class="num">${d.questions.length}</td>
+      <td class="num">${d.leaks.length}</td>
+      <td class="num">${d.finishTime ? fmtHM(d.finishTime) : '—'}</td>
+      <td class="res" title="${sailing ? 'Still sailing today' : RESULT[d.result].text + (k === tk ? ' (so far)' : '')}">${sailing ? '<span class="pill run" style="font-size:13px;margin:0">sailing…</span>' : RESULT[d.result].icon}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="7" class="empty">No days logged yet. Your first study day will appear here.</td></tr>`;
+}
+
+/* ============================================================
+   RENDER: COMPARE (inline SVG charts, last 14 days)
+   ============================================================ */
+function niceStep(max) {
+  const raw = Math.max(max, 1) / 4, mag = 10 ** Math.floor(Math.log10(raw)), n = raw / mag;
+  return Math.max(1, (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * mag);
+}
+function barPath(x, y, w, h, r = 4) {
+  r = Math.min(r, w / 2, h);
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+}
+const CH = { W: 560, H: 230, l: 38, r: 64, t: 14, b: 40 };
+function xAxisLabels(labels, band) {
+  return labels.map((L, i) => {
+    const x = CH.l + band * i + band / 2, y = CH.H - CH.b + 16;
+    return `<text class="ax${L.today ? ' today' : ''}" text-anchor="middle"><tspan x="${x}" y="${y}">${L.top}</tspan><tspan x="${x}" y="${y + 13}">${L.bot}</tspan></text>`;
+  }).join('');
+}
+function barChart({ labels, values, refs = [], color, tip }) {
+  const { W, H, l, r, t, b } = CH, iw = W - l - r, ih = H - t - b;
+  const maxV = Math.max(1, ...values, ...refs.map(x => x.v));
+  const step = niceStep(maxV), yMax = Math.ceil(maxV / step) * step;
+  const y = v => t + ih - (v / yMax) * ih;
+  const band = iw / labels.length, bw = Math.max(6, band * 0.58);
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">`;
+  for (let v = 0; v <= yMax + 1e-9; v += step) s += `<line class="${v ? 'grid' : 'base'}" x1="${l}" x2="${W - r}" y1="${y(v)}" y2="${y(v)}"/><text class="ax" x="${l - 7}" y="${y(v) + 4}" text-anchor="end">${v}</text>`;
+  values.forEach((v, i) => {
+    const x = l + band * i + (band - bw) / 2;
+    if (v > 0) s += `<path d="${barPath(x, y(v), bw, y(0) - y(v))}" fill="${color}"/>`;
+  });
+  refs.forEach(R => s += `<line class="ref${R.dash ? ' dash' : ''}" x1="${l}" x2="${W - r}" y1="${y(R.v)}" y2="${y(R.v)}"/><text class="reflbl" x="${W - r + 6}" y="${y(R.v) + 4}">${R.label}</text>`);
+  values.forEach((v, i) => s += `<rect class="hit" x="${l + band * i}" y="${t}" width="${band}" height="${ih}" data-tip="${esc(tip(i))}"/>`);
+  s += xAxisLabels(labels, band) + '</svg>';
+  return s;
+}
+function dotChart({ labels, values, refMin, refLabel, color, tip }) {
+  const { W, H, l, r, t, b } = CH, iw = W - l - r, ih = H - t - b;
+  const vals = values.filter(v => v != null);
+  const lo = Math.floor((Math.min(refMin, ...vals) - 30) / 60) * 60;
+  const hi = Math.ceil((Math.max(refMin, ...vals) + 30) / 60) * 60;
+  const y = m => t + ih - ((m - lo) / (hi - lo)) * ih;
+  const band = iw / labels.length;
+  const stepH = (hi - lo) / 60 > 6 ? 120 : 60;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">`;
+  for (let m = lo; m <= hi; m += stepH) s += `<line class="grid" x1="${l}" x2="${W - r}" y1="${y(m)}" y2="${y(m)}"/><text class="ax" x="${l - 7}" y="${y(m) + 4}" text-anchor="end">${fmtMinOfDay(m)}</text>`;
+  s += `<line class="ref" x1="${l}" x2="${W - r}" y1="${y(refMin)}" y2="${y(refMin)}"/><text class="reflbl" x="${W - r + 6}" y="${y(refMin) + 4}">${refLabel}</text>`;
+  values.forEach((v, i) => {
+    const cx = l + band * i + band / 2;
+    if (v != null) s += `<circle cx="${cx}" cy="${y(v)}" r="6" fill="${color}" stroke="var(--panel)" stroke-width="2"/>`;
+    s += `<rect class="hit" x="${l + band * i}" y="${t}" width="${band}" height="${ih}" data-tip="${esc(tip(i))}"/>`;
+  });
+  s += xAxisLabels(labels, band) + '</svg>';
+  return s;
+}
+function leakMapChart(counts, hours) {
+  const W = 1000, H = 96, l = 6, r = 6, t = 6, cellH = 50;
+  const cw = (W - l - r) / 24, max = Math.max(1, ...counts);
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">`;
+  hours.forEach((h, i) => {
+    const n = counts[i], x = l + i * cw;
+    const alpha = n ? 0.22 + 0.78 * (n / max) : 0.06;
+    s += `<rect class="cell" x="${x}" y="${t}" width="${cw}" height="${cellH}" rx="4" fill="rgba(239,123,103,${alpha.toFixed(2)})" data-tip="${pad(h)}:00–${pad((h + 1) % 24)}:00 · ${n} leak${n === 1 ? '' : 's'}"/>`;
+    if (n) s += `<text class="celltxt" x="${x + cw / 2}" y="${t + cellH / 2 + 4}" text-anchor="middle" fill="${n / max > 0.5 ? '#2a0a05' : 'var(--ink)'}">${n}</text>`;
+    if (i % 2 === 0) s += `<text class="ax" x="${x}" y="${t + cellH + 18}">${pad(h)}:00</text>`;
+  });
+  return s + '</svg>';
+}
+function renderCompare() {
+  const c = cfg(), tk = todayKey();
+  const keys = Array.from({ length: 14 }, (_, i) => addDays(tk, i - 13));
+  const ds = keys.map(k => deriveDay(k));
+  const labels = keys.map(k => { const d = dateOfKey(k); return { top: d.toLocaleDateString('en-AU', { weekday: 'short' }).slice(0, 2), bot: d.getDate(), today: k === tk }; });
+  const active = ds.filter(d => d.events.length);
+  const avg = f => active.length ? (active.reduce((a, d) => a + f(d), 0) / active.length).toFixed(1) : '—';
+  const dl = i => dateLabel(keys[i]) + (keys[i] === tk ? ' (today)' : '');
+
+  $('#subSessions').textContent = `Average ${avg(d => d.completed)} across ${active.length} logged day${active.length === 1 ? '' : 's'}`;
+  $('#chSessions').innerHTML = barChart({ labels, values: ds.map(d => d.completed), color: 'var(--gold)',
+    refs: [{ v: c.target, label: `target ${c.target}` }, { v: c.floor, label: `floor ${c.floor}`, dash: true }],
+    tip: i => `${dl(i)}: ${ds[i].completed} session${ds[i].completed === 1 ? '' : 's'}` });
+
+  $('#subQuestions').textContent = `Average ${avg(d => d.questions.length)} doubloons per logged day`;
+  $('#chQuestions').innerHTML = barChart({ labels, values: ds.map(d => d.questions.length), color: 'var(--gold2)',
+    tip: i => `${dl(i)}: ${ds[i].questions.length} question${ds[i].questions.length === 1 ? '' : 's'}` });
+
+  const starts = ds.map((d, i) => d.firstStart ? (d.firstStart - +dateOfKey(keys[i])) / 60000 : null);
+  const startVals = starts.filter(v => v != null);
+  $('#subStarts').textContent = startVals.length ? `Average ${fmtMinOfDay(startVals.reduce((a, b) => a + b, 0) / startVals.length)} · higher = later` : 'No sessions in the last 14 days';
+  $('#chStarts').innerHTML = dotChart({ labels, values: starts, refMin: toMin(c.start), refLabel: c.start, color: 'var(--ghost)',
+    tip: i => `${dl(i)}: ${starts[i] != null ? 'first session ' + fmtMinOfDay(starts[i]) : 'no sessions'}` });
+
+  $('#subLeaks').textContent = `Average ${avg(d => d.leaks.length)} leaks per logged day`;
+  $('#chLeaks').innerHTML = barChart({ labels, values: ds.map(d => d.leaks.length), color: 'var(--water)',
+    tip: i => `${dl(i)}: ${ds[i].leaks.length} leak${ds[i].leaks.length === 1 ? '' : 's'}` });
+
+  // leak map: every leak ever logged, bucketed by hour (study-day order, from 04:00)
+  const hours = Array.from({ length: 24 }, (_, i) => (i + c.rolloverHour) % 24);
+  const counts = new Array(24).fill(0);
+  let total = 0;
+  for (const k of Object.keys(store.days)) for (const e of store.days[k].events) {
+    if (e.type !== 'leak') continue;
+    counts[hours.indexOf(new Date(tms(e)).getHours())]++; total++;
+  }
+  const worst = counts.indexOf(Math.max(...counts));
+  $('#subLeakMap').textContent = total ? `${total} leaks across all days · worst hour ${pad(hours[worst])}:00–${pad((hours[worst] + 1) % 24)}:00 (${counts[worst]})` : 'No leaks logged yet';
+  $('#chLeakMap').innerHTML = leakMapChart(counts, hours);
+}
+const toMin = hhmm => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+
+/* ============================================================
+   CELEBRATION: fireworks + cannon smoke
+   ============================================================ */
+function celebrate() {
+  const fx = $('#fx'), colors = ['#f8d97f', '#ffffff', '#e9b949', '#a6f0c6', '#ef7b67'];
+  for (let b = 0; b < 5; b++) {
+    const cx = 18 + Math.random() * 60, cy = 12 + Math.random() * 28;
+    for (let i = 0; i < 26; i++) {
+      const p = document.createElement('i'), ang = (i / 26) * Math.PI * 2, r = 55 + Math.random() * 55;
+      p.style.left = cx + '%'; p.style.top = cy + '%';
+      p.style.setProperty('--dx', (Math.cos(ang) * r).toFixed(0) + 'px');
+      p.style.setProperty('--dy', (Math.sin(ang) * r).toFixed(0) + 'px');
+      p.style.background = colors[(i + b) % colors.length];
+      p.style.animationDelay = (b * 0.4) + 's';
+      fx.appendChild(p);
+    }
+  }
+  const shipX = parseFloat($('#playerShip').style.left) || FINISH_X;
+  for (let i = 0; i < 6; i++) {
+    const puff = document.createElement('b');
+    puff.style.left = (shipX - 3 + Math.random() * 6) + '%';
+    puff.style.top = (240 + Math.random() * 30) + 'px';
+    puff.style.setProperty('--dx', (Math.random() * 60 - 30).toFixed(0) + 'px');
+    puff.style.animationDelay = (i * 0.15) + 's';
+    fx.appendChild(puff);
+  }
+  setTimeout(() => { fx.innerHTML = ''; }, 4500);
+}
+/* a small gold burst over your ship for each extra quest session */
+function starBurst() {
+  const fx = $('#fx'), x = parseFloat($('#playerShip').style.left) || 50;
+  for (let i = 0; i < 18; i++) {
+    const p = document.createElement('i'), ang = (i / 18) * Math.PI * 2, r = 40 + Math.random() * 35;
+    p.style.left = x + '%'; p.style.top = '230px';
+    p.style.setProperty('--dx', (Math.cos(ang) * r).toFixed(0) + 'px');
+    p.style.setProperty('--dy', (Math.sin(ang) * r).toFixed(0) + 'px');
+    p.style.background = i % 2 ? '#f8d97f' : '#ffffff';
+    fx.appendChild(p);
+  }
+  setTimeout(() => { fx.innerHTML = ''; }, 1800);
+}
+/* the button that appears after the celebration */
+function startQuest() {
+  const day = store.days[todayKey()];
+  if (!day) return;
+  day.quest = true;
+  saveStore();
+  renderAll();
+  toast('Extra quest! Every session from here earns a star ★');
+}
+
+/* ============================================================
+   SETTINGS
+   ============================================================ */
+const FIELDS = [
+  ['start', 'Dutchman sets sail', 'time'],
+  ['sessionMin', 'Session length (min)'],
+  ['minSessionMin', 'Counts as complete after (min)'],
+  ['breakMin', 'Normal break (min)'],
+  ['lunchMin', 'Lunch break (min)'],
+  ['lunchAfter', 'Lunch after session #'],
+  ['dinnerMin', 'Dinner break (min)'],
+  ['dinnerAfter', 'Dinner after session #'],
+  ['target', 'Target sessions'],
+  ['floor', 'Floor (pass day) sessions'],
+  ['ghostBufferMin', 'Ghost buffer (min)'],
+];
+function openSettings() {
+  fillSettings(cfg());
+  renderArtList();
+  renderNotifyBtn();
+  $('#settingsErr').textContent = '';
+  $('#settings').hidden = false;
+}
+function closeSettings() { $('#settings').hidden = true; }
+function fillSettings(c) {
+  $('#settingsForm').innerHTML = FIELDS.map(([k, label, type]) =>
+    `<label>${label}<input data-k="${k}" type="${type === 'time' ? 'time' : 'number'}" ${type === 'time' ? '' : 'min="0" step="1"'} value="${esc(c[k])}"></label>`).join('');
+  updatePreview();
+}
+function readSettings() {
+  const out = {};
+  $$('#settingsForm input').forEach(inp => { out[inp.dataset.k] = inp.type === 'time' ? inp.value : Number(inp.value); });
+  const errs = [];
+  if (!/^\d{2}:\d{2}$/.test(out.start)) errs.push('Start time looks wrong.');
+  for (const [k, label, type] of FIELDS) if (type !== 'time' && (!Number.isInteger(out[k]) || out[k] < 0)) errs.push(`${label} must be a whole number.`);
+  if (out.sessionMin < 1) errs.push('Session length must be at least 1 minute.');
+  if (out.target < 1) errs.push('Target must be at least 1.');
+  if (out.floor < 1 || out.floor > out.target) errs.push('Floor must be between 1 and the target.');
+  if (out.minSessionMin > out.sessionMin) errs.push('"Counts as complete" can\'t be longer than a session.');
+  return { out, errs };
+}
+function updatePreview() {
+  const { out, errs } = readSettings();
+  if (errs.length) { $('#settingsPreview').textContent = ''; return; }
+  const p = ghostPlan(todayKey(), Object.assign({}, cfg(), out));
+  $('#settingsPreview').textContent = `Perfect day: ${out.start} → ${fmtHM(p.perfectFinishMs)} (${fmtDur(p.perfect)}). The Dutchman finishes at ${fmtHM(p.finishMs)} (stretch ×${p.stretch.toFixed(3)}).`;
+}
+function saveSettings() {
+  const { out, errs } = readSettings();
+  if (errs.length) { $('#settingsErr').textContent = errs[0]; return; }
+  store.config = Object.assign({}, cfg(), out);
+  saveStore();
+  closeSettings();
+  renderAll();
+  toast('Settings saved');
+}
+function renderArtList() {
+  $('#artList').innerHTML = Object.entries(ART.files).map(([slot, f]) =>
+    `<div>${artStatus[slot] ? '<span class="ok">✓ loaded</span>' : '○ placeholder'} · <code>${f}</code></div>`).join('');
+}
+
+/* ============================================================
+   EXPORT / IMPORT (import merges, never wipes)
+   ============================================================ */
+function exportJSON() {
+  const blob = new Blob([JSON.stringify(store, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `dutchman-race-${todayKey()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  toast('Backup downloaded');
+}
+function mergeImport(data) {
+  if (!data || typeof data.days !== 'object') throw new Error('That file has no "days" in it');
+  let added = 0, days = 0;
+  for (const [k, d] of Object.entries(data.days)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(k) || !d || !Array.isArray(d.events)) continue;
+    const local = store.days[k] || (store.days[k] = { events: [] });
+    if (d.quest) local.quest = true;
+    const seen = new Map(local.events.map(e => [e.type + '|' + tms(e), e]));
+    let n = 0;
+    for (const e of d.events) {
+      if (!e || !EVENT_TYPES.includes(e.type) || isNaN(tms(e))) continue;
+      const sig = e.type + '|' + tms(e);
+      const existing = seen.get(sig);
+      if (existing) { if (!existing.note && e.note) existing.note = String(e.note).slice(0, 160); continue; }
+      const ne = { id: uid(), type: e.type, t: new Date(e.t).toISOString() };
+      if (e.note) ne.note = String(e.note).slice(0, 160);
+      if (e.auto) ne.auto = true;
+      if (e.demo) ne.demo = true;
+      local.events.push(ne); seen.set(sig, ne); n++;
+    }
+    if (n) { added += n; days++; }
+    if (!local.events.length) delete store.days[k];
+  }
+  autoCloseOld();
+  saveStore();
+  renderAll();
+  return { added, days };
+}
+
+/* ============================================================
+   DEMO DATA: 5 made-up days before today (marked demo:true)
+   ============================================================ */
+const hasDemo = () => Object.values(store.days).some(d => d.events.some(e => e.demo));
+function clearDemo() {
+  for (const k of Object.keys(store.days)) {
+    store.days[k].events = store.days[k].events.filter(e => !e.demo);
+    if (!store.days[k].events.length) delete store.days[k];
+  }
+}
+function loadDemo() {
+  clearDemo();
+  const tk = todayKey(), r = cfg().rolloverHour;
+  const plans = [
+    { ago: 1, start: '07:40', durs: [50, 51, 50, 52, 50, 49, 50, 51, 50, 50], gaps: [10, 9, 10, 30, 10, 10, 11, 30, 10], q: 14, leaks: [['14:12', 'phone'], ['15:40', '']] },
+    { ago: 2, start: '09:15', durs: [50, 48, 52, 50, 45, 50, 47, 50], gaps: [12, 10, 45, 15, 10, 20, 50], q: 9, leaks: [['11:05', 'group chat'], ['15:10', ''], ['15:35', 'YouTube'], ['16:02', ''], ['21:40', 'ski forecasts']] },
+    { ago: 3, start: '10:30', durs: [50, 46, 25, 50, 41], gaps: [20, 60, 30, 90], q: 4, leaks: [['11:20', ''], ['13:05', 'email'], ['15:15', ''], ['15:50', 'phone'], ['16:30', ''], ['20:10', ''], ['23:45', 'reddit']] },
+    { ago: 4, start: '08:30', durs: [50, 50, 50, 50, 50, 50, 50, 50, 50, 50], gaps: [15, 20, 15, 60, 25, 20, 15, 60, 20], q: 11, leaks: [['10:40', ''], ['15:20', 'snack run'], ['19:05', '']] },
+    { ago: 5, start: '07:55', durs: [50, 50, 50, 50, 50, 50, 50, 50, 50, 50], gaps: [10, 10, 10, 40, 10, 10, 10, 40, 10], q: 16, leaks: [['00:30', 'late-night scrolling']] },
+  ];
+  const at = (k, hhmm) => { const [h, m] = hhmm.split(':').map(Number); const d = dateOfKey(k); if (h < r) d.setDate(d.getDate() + 1); d.setHours(h, m, 0, 0); return +d; };
+  let skipped = 0;
+  for (const p of plans) {
+    const k = addDays(tk, -p.ago);
+    if (store.days[k] && store.days[k].events.length) { skipped++; continue; }   // never mix demo into a real day
+    const day = store.days[k] = { events: [] };
+    const add = (type, ms, note) => { const e = { id: uid(), type, t: new Date(ms).toISOString(), demo: true }; if (note) e.note = note; day.events.push(e); };
+    let t = at(k, p.start);
+    const starts = [];
+    p.durs.forEach((dur, i) => {
+      starts.push(t);
+      add('start', t);
+      add('finish', t + dur * 60000);
+      t += (dur + (p.gaps[i] || 0)) * 60000;
+    });
+    for (let i = 0; i < p.q; i++) add('question', starts[i % starts.length] + (6 + (i * 7) % 38) * 60000);
+    p.leaks.forEach(([hhmm, note]) => add('leak', at(k, hhmm), note));
+  }
+  saveStore();
+  return skipped;
+}
+
+/* ============================================================
+   TABS, TOAST, TOOLTIP
+   ============================================================ */
+let currentTab = 'today';
+function showTab(name) {
+  currentTab = name;
+  $$('.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  ['today', 'logbook', 'compare'].forEach(t => { $('#tab-' + t).hidden = t !== name; });
+  if (name === 'logbook') renderLogbook();
+  if (name === 'compare') renderCompare();
+}
+let toastTimer;
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+}
+document.addEventListener('mousemove', e => {
+  const tip = $('#tip');
+  const el = e.target.closest ? e.target.closest('[data-tip]') : null;
+  if (!el) { tip.hidden = true; return; }
+  tip.textContent = el.getAttribute('data-tip');
+  tip.hidden = false;
+  tip.style.left = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8) + 'px';
+  tip.style.top = (e.clientY + 16) + 'px';
+});
+
+/* ============================================================
+   MAIN LOOP
+   ============================================================ */
+const prevCompleted = {}, prevStars = {};
+function renderAll() {
+  const now = Date.now(), key = todayKey(), c = cfg();
+  const d = deriveDay(key, now);
+  renderLive(now);
+  renderTimer(now);
+  renderClock(now);
+  renderLog(d);
+  if (currentTab === 'logbook') renderLogbook();
+  if (currentTab === 'compare') renderCompare();
+  const prev = prevCompleted[key];
+  if (prev !== undefined && prev < c.target && d.completed >= c.target) celebrate();
+  if (prevStars[key] !== undefined && d.extraStars > prevStars[key]) starBurst();   // an extra quest star (or half) just landed
+  prevCompleted[key] = d.completed;
+  prevStars[key] = d.extraStars;
+  $('#btnDemo').textContent = hasDemo() ? 'Clear demo data' : 'Load demo data';
+}
+let lastKey = null;
+function tick() {
+  const now = Date.now(), key = todayKey();
+  if (key !== lastKey) {            // 04:00 rollover (or first run)
+    lastKey = key;
+    autoCloseOld();
+    renderAll();
+    return;
+  }
+  renderTimer(now);
+  renderClock(now);
+  if (now - lastLive >= 10000) renderLive(now);   // ships move every ~10 s
+}
+
+function init() {
+  $$('[data-art]').forEach(mountArt);
+  setupWave('waveBack', 'waveBack', '#2a8aa6', 34, 1);
+  setupWave('waveMid', 'waveMid', '#1a6987', 24, -1);
+  setupWave('waveFront', 'waveFront', '#0f3a5f', 15, 1);
+  $('#ghostShip').style.setProperty('--ghost-op', ART.ghostOpacity);
+
+  autoCloseOld();
+  // don't re-beep for a session that was already past 50:00 when the page opened
+  const d0 = deriveDay(todayKey());
+  if (d0.running && (Date.now() - d0.running.start) / 1000 >= cfg().sessionMin * 60) beeped.add(d0.running.start);
+
+  // buttons
+  $$('.tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+  $('#btnSession').addEventListener('click', toggleSession);
+  $('#btnQuestion').addEventListener('click', addQuestion);
+  $('#btnLeak').addEventListener('click', addLeak);
+  $('#btnUndo').addEventListener('click', undo);
+  $('#btnQuest').addEventListener('click', startQuest);
+  $('#log').addEventListener('click', e => {
+    const b = e.target.closest('[data-del]');
+    if (!b) return;
+    if (b.dataset.session && !confirm(`Delete the session ${b.dataset.label}?`)) return;
+    deleteIds(b.dataset.del.split(','));
+    toast('Deleted');
+  });
+  const inp = $('#leakNote');
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); closeLeakNote(true); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeLeakNote(false); }
+  });
+  inp.addEventListener('blur', () => { if (pendingLeakId) closeLeakNote(true); });
+
+  // settings + data
+  $('#btnSettings').addEventListener('click', openSettings);
+  $('#btnCancel').addEventListener('click', closeSettings);
+  $('#btnSave').addEventListener('click', saveSettings);
+  $('#btnDefaults').addEventListener('click', () => fillSettings(CONFIG));
+  $('#settingsForm').addEventListener('input', updatePreview);
+  $('#settings').addEventListener('click', e => { if (e.target.id === 'settings') closeSettings(); });
+  $('#btnDemo').addEventListener('click', () => {
+    if (hasDemo()) { clearDemo(); saveStore(); toast('Demo data cleared'); }
+    else { const skipped = loadDemo(); toast(skipped ? `Demo data loaded (skipped ${skipped} day${skipped === 1 ? '' : 's'} that already had real entries)` : 'Demo data loaded for the 5 days before today'); }
+    renderAll();
+  });
+  $('#btnResetToday').addEventListener('click', () => {
+    if (!confirm("Delete everything logged today? This can't be undone.")) return;
+    delete store.days[todayKey()];
+    saveStore(); renderAll(); closeSettings(); toast('Today has been reset');
+  });
+  $('#btnNotify').addEventListener('click', () => {
+    if ('Notification' in window) Notification.requestPermission().then(renderNotifyBtn);
+  });
+  $('#btnExport').addEventListener('click', exportJSON);
+  $('#btnImport').addEventListener('click', () => $('#importFile').click());
+  $('#importFile').addEventListener('change', e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try { const r = mergeImport(JSON.parse(reader.result)); toast(`Imported ${r.added} new event${r.added === 1 ? '' : 's'} across ${r.days} day${r.days === 1 ? '' : 's'}`); }
+      catch (err) { toast('Import failed: ' + err.message); }
+      e.target.value = '';
+    };
+    reader.readAsText(f);
+  });
+
+  // keyboard shortcuts: S Q L U
+  document.addEventListener('keydown', e => {
+    if (!$('#settings').hidden) { if (e.key === 'Escape') closeSettings(); return; }
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || e.target.isContentEditable) return;
+    const act = { s: toggleSession, q: addQuestion, l: addLeak, u: undo }[e.key.toLowerCase()];
+    if (!act) return;
+    e.preventDefault();
+    if (currentTab !== 'today') showTab('today');
+    act();
+  });
+  document.addEventListener('pointerdown', ensureAudio);
+
+  // another tab changed the data / tab came back into view
+  window.addEventListener('storage', e => { if (e.key === STORE_KEY) { store = loadStore(); renderAll(); } });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) renderAll(); });
+
+  // offline support + "Install app" when hosted over https (skipped when opened as a local file)
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+  tick();
+  setInterval(tick, 1000);
+}
+init();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "The Flying Dutchman Race",
+  "short_name": "Dutchman",
+  "description": "Race the Flying Dutchman through your study day.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a1830",
+  "theme_color": "#071226",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
