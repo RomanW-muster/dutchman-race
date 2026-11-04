@@ -637,8 +637,13 @@ function mountArt(el) {
   if (!file) return;
   const img = new Image();
   img.alt = ''; img.draggable = false;
+  let tries = 0;
   img.onload = () => { el.innerHTML = ''; el.appendChild(img); artStatus[slot] = true; };
-  img.onerror = () => { if (artStatus[slot] !== true) artStatus[slot] = false; };
+  img.onerror = () => {
+    if (artStatus[slot] !== true) artStatus[slot] = false;
+    // a hiccup (e.g. GitHub mid-deploy) shouldn't leave placeholders stuck: retry a few times
+    if (++tries <= 4) setTimeout(() => { img.src = ART.folder + file + '?retry=' + tries; }, 2500 * tries);
+  };
   img.src = ART.folder + file;
 }
 
