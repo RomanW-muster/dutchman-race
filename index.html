@@ -58,7 +58,7 @@ main{padding:16px 20px 48px;max-width:1600px;margin:0 auto}
 .wave{position:absolute;left:0;right:0;overflow:hidden;pointer-events:none}
 .wave .strip{position:absolute;top:0;bottom:0;left:0;background-repeat:repeat-x;will-change:transform}
 #waveBack{bottom:118px;height:72px;z-index:3}
-#island{position:absolute;right:0;bottom:118px;width:23%;min-width:190px;max-width:330px;z-index:4}
+#island{position:absolute;right:3%;bottom:112px;width:12%;min-width:120px;max-width:180px;z-index:4}
 #ghostShip{bottom:126px;width:130px;z-index:5}
 #waveMid{bottom:50px;height:94px;z-index:6}
 #buoy{position:absolute;left:1.2%;bottom:56px;width:40px;z-index:7}
@@ -72,7 +72,7 @@ main{padding:16px 20px 48px;max-width:1600px;margin:0 auto}
 /* EXTRA QUEST: the "camera" pans past the island, which slides to the left */
 #island{transition:right 3s ease-in-out}
 #buoy{transition:opacity 1s}
-#scene.quest #island{right:77%}
+#scene.quest #island{right:82%}
 #scene.quest #buoy{opacity:0}
 #ghostShip{transition:left 2.5s ease-in-out,opacity 2s}
 #scene.quest #ghostShip{opacity:0}   /* left behind at the island */
@@ -454,7 +454,7 @@ const RESULT = {
   pass: { icon: '⚓', text: 'Pass day' },
   fail: { icon: '☠️', text: 'Under the floor' },
 };
-const START_X = 10, FINISH_X = 75;   // track start/finish as % of the scene width
+const START_X = 10, FINISH_X = 80;   // track start/finish as % of the scene width
 
 /* ---------- tiny helpers ---------- */
 const $ = s => document.querySelector(s);
@@ -883,7 +883,7 @@ function deleteIds(ids) {
 const xFor = pos => START_X + (clamp(pos, 0, cfg().target) / cfg().target) * (FINISH_X - START_X);
 
 /* Extra quest track: open sea past the island, always a couple of segments ahead of you */
-const Q_START = 26, Q_END = 93, Q_GHOST_X = 11;
+const Q_START = 22, Q_END = 93, Q_GHOST_X = 11;
 const questSlots = d => Math.max(5, Math.floor(d.extraPos) + 2);
 const xQuest = (p, n) => Q_START + (clamp(p, 0, n) / n) * (Q_END - Q_START);
 
