@@ -167,6 +167,12 @@ main{padding:16px 20px 48px;max-width:1600px;margin:0 auto}
 .pill.run{background:#4a3d16;color:var(--gold2)}
 .log .del{background:none;border:none;color:var(--dim);font-size:16px;padding:4px 8px;border-radius:8px}
 .log .del:hover{color:var(--bad);background:rgba(239,123,103,.12)}
+.log .edit{background:none;border:none;color:var(--dim);font-size:16px;padding:4px 8px;border-radius:8px}
+.log .edit:hover{color:var(--gold2);background:rgba(233,185,73,.12)}
+.sheet.small{width:min(460px,100%)}
+.form-grid input[type=time]{width:150px}
+.form-grid.one{grid-template-columns:1fr}
+.hint{color:var(--muted);font-size:14px;margin-top:10px}
 .empty{color:var(--dim);padding:10px 4px}
 .summary dl{display:grid;grid-template-columns:auto 1fr;gap:9px 16px;margin:0}
 .summary dt{color:var(--muted)}
@@ -366,6 +372,24 @@ svg.chart{width:100%;height:auto;display:block;overflow:visible}
     </div>
     <h3>Art (from the <code>art/</code> folder next to this file)</h3>
     <div class="artlist" id="artList"></div>
+  </div>
+</div>
+
+<!-- ======================= EDIT A SESSION ======================= -->
+<div class="modal" id="editModal" hidden>
+  <div class="sheet small">
+    <h2 id="editTitle">Edit session</h2>
+    <div class="form-grid one">
+      <label>Started<input type="time" id="editStart"></label>
+      <label>Finished<input type="time" id="editEnd"></label>
+    </div>
+    <div class="hint" id="editHint"></div>
+    <div class="preview" id="editPreview"></div>
+    <div class="err" id="editErr"></div>
+    <div class="actions">
+      <button class="chip-btn" id="editCancel">Cancel</button>
+      <button class="primary-btn" id="editSave">Save</button>
+    </div>
   </div>
 </div>
 
@@ -1004,7 +1028,7 @@ function renderLog(d = deriveDay(todayKey())) {
     else what = `Short session · ${Math.round(s.min)} min <span class="pill short">short · doesn't count</span>`;
     if (s.pausedMin >= 1) what += ` <span class="pill auto" title="Paused time doesn't count">paused ${fmtDur(s.pausedMin)}</span>`;
     if (s.auto) what += ` <span class="pill auto">auto-closed</span>`;
-    items.push({ t: s.start, time: `${fmtHM(s.start)}–${s.running ? 'now' : fmtHM(s.end)}`, what, ids: [s.startId, s.finishId, ...s.pauseIds].filter(Boolean), session: true });
+    items.push({ t: s.start, time: `${fmtHM(s.start)}–${s.running ? 'now' : fmtHM(s.end)}`, what, ids: [s.startId, s.finishId, ...s.pauseIds].filter(Boolean), session: true, editId: s.startId });
   }
   for (const e of d.questions) items.push({ t: tms(e), time: fmtHM(tms(e)), what: `<span class="icon sm" data-art="doubloon"></span>+1 question`, ids: [e.id] });
   for (const e of d.leaks) items.push({ t: tms(e), time: fmtHM(tms(e)), what: `<span class="icon sm" data-art="leak"></span>Leak${e.note ? ` · <span class="note">${esc(e.note)}</span>` : ''}`, ids: [e.id] });
@@ -1012,7 +1036,7 @@ function renderLog(d = deriveDay(todayKey())) {
   items.sort((a, b) => b.t - a.t);
   const ul = $('#log');
   ul.innerHTML = items.length
-    ? items.map(it => `<li><span class="t">${it.time}</span><span class="what">${it.what}</span><button class="del" title="Delete" data-del="${it.ids.join(',')}" data-session="${it.session ? 1 : ''}" data-label="${esc(it.time)}">✕</button></li>`).join('')
+    ? items.map(it => `<li><span class="t">${it.time}</span><span class="what">${it.what}</span>${it.editId ? `<button class="edit" title="Edit start/finish times" data-edit="${it.editId}">✎</button>` : ''}<button class="del" title="Delete" data-del="${it.ids.join(',')}" data-session="${it.session ? 1 : ''}" data-label="${esc(it.time)}">✕</button></li>`).join('')
     : `<li class="empty">Nothing yet today. Press S to set sail.</li>`;
   ul.querySelectorAll('[data-art]').forEach(mountArt);
 }
@@ -1241,6 +1265,94 @@ function startQuest() {
   saveStore();
   renderAll();
   toast('Extra quest! Every session from here earns a star ★');
+}
+
+/* ============================================================
+   EDIT A SESSION'S TIMES (e.g. you forgot to press Finish)
+   ============================================================ */
+let editing = null;
+function hmToMs(key, hhmm, orig) {
+  if (orig != null && fmtHM(orig) === hhmm) return orig;      // unchanged: keep the exact original time
+  const [h, m] = hhmm.split(':').map(Number);
+  const d = dateOfKey(key);
+  if (h < cfg().rolloverHour) d.setDate(d.getDate() + 1);    // 01:30 belongs to the end of the study day
+  d.setHours(h, m, 0, 0);
+  return +d;
+}
+function openEdit(startId) {
+  const key = todayKey(), d = deriveDay(key);
+  const s = d.sessions.find(x => x.startId === startId);
+  if (!s) return;
+  const day = store.days[key];
+  editing = { key, startId, finishId: s.finishId || null, origStart: s.start, origEnd: s.running ? null : s.end, running: !!s.running,
+    pauseEvs: day.events.filter(e => s.pauseIds.includes(e.id)) };
+  $('#editTitle').textContent = s.running ? 'Edit the running session' : `Edit session ${fmtHM(s.start)}–${fmtHM(s.end)}`;
+  $('#editStart').value = fmtHM(s.start);
+  $('#editEnd').value = s.running ? '' : fmtHM(s.end);
+  $('#editHint').textContent = s.running
+    ? 'Forgot to press Finish? Put in when you actually stopped and it\'ll be finished at that time. Leave Finished blank to keep it running.'
+    : 'Change when it started or finished. Paused time inside the session still doesn\'t count.';
+  $('#editErr').textContent = '';
+  $('#editModal').hidden = false;
+  updateEditPreview();
+  (s.running ? $('#editEnd') : $('#editEnd')).focus();
+}
+function closeEdit() { $('#editModal').hidden = true; editing = null; }
+function readEdit() {
+  const E = editing, c = cfg(), now = Date.now(), errs = [];
+  const sv = $('#editStart').value, ev = $('#editEnd').value;
+  if (!sv) return { errs: ['Put in a start time.'] };
+  const start = hmToMs(E.key, sv, E.origStart);
+  const end = ev ? hmToMs(E.key, ev, E.origEnd) : null;
+  if (!E.running && end == null) errs.push('A finished session needs a finish time.');
+  const { start: d0, end: d1 } = dayBounds(E.key);
+  if (start < d0 || start >= d1 || (end != null && end > d1)) errs.push(`Times need to fall inside this study day (${pad(c.rolloverHour)}:00 to ${pad(c.rolloverHour)}:00).`);
+  if (start > now) errs.push("It can't start in the future.");
+  if (end != null && end <= start) errs.push('Finish has to be after the start.');
+  if (end != null && end > now + 60000) errs.push("It can't finish in the future.");
+  const stop = end ?? now;
+  const clash = deriveDay(E.key).sessions.find(o => o.startId !== E.startId && start < (o.running ? now : o.end) && stop > o.start);
+  if (clash) errs.push(`That overlaps the session at ${fmtHM(clash.start)}–${clash.running ? 'now' : fmtHM(clash.end)}.`);
+  // paused time that still falls inside the edited window
+  let pausedMs = 0, ps = null;
+  for (const e of E.pauseEvs.slice().sort((a, b) => tms(a) - tms(b))) {
+    const t = tms(e);
+    if (t < start || t > stop) continue;
+    if (e.type === 'pause' && ps == null) ps = t;
+    else if (e.type === 'resume' && ps != null) { pausedMs += t - ps; ps = null; }
+  }
+  if (ps != null) pausedMs += stop - ps;
+  const min = Math.max(0, (stop - start - pausedMs) / 60000);
+  return { start, end, min, pausedMin: pausedMs / 60000, errs };
+}
+function updateEditPreview() {
+  if (!editing) return;
+  const r = readEdit(), c = cfg();
+  $('#editErr').textContent = r.errs.length ? r.errs[0] : '';
+  $('#editPreview').textContent = r.errs.length || r.min == null ? '' :
+    `${Math.round(r.min)} min on deck${r.pausedMin >= 1 ? ` (+${fmtDur(r.pausedMin)} paused)` : ''}` +
+    (r.end == null ? ' so far · still running' : r.min >= c.minSessionMin ? ' · counts ✓' : ` · short, won't count (needs ${c.minSessionMin})`);
+}
+function saveEdit() {
+  if (!editing) return;
+  const r = readEdit();
+  if (r.errs.length) { $('#editErr').textContent = r.errs[0]; return; }
+  const E = editing, day = store.days[E.key];
+  const st = day.events.find(e => e.id === E.startId);
+  if (!st) { closeEdit(); return; }
+  st.t = new Date(r.start).toISOString();
+  if (r.end != null) {
+    const fin = E.finishId && day.events.find(e => e.id === E.finishId);
+    if (fin) { fin.t = new Date(r.end).toISOString(); delete fin.auto; }
+    else day.events.push({ id: uid(), type: 'finish', t: new Date(r.end).toISOString() });
+  }
+  // pauses that now fall outside the session are dropped
+  const stop = r.end ?? Infinity, pids = new Set(E.pauseEvs.map(e => e.id));
+  day.events = day.events.filter(e => !(pids.has(e.id) && (tms(e) < r.start || tms(e) > stop)));
+  saveStore();
+  closeEdit();
+  renderAll();
+  toast(r.end == null ? `Session now started at ${fmtHM(r.start)}` : `Session set to ${fmtHM(r.start)}–${fmtHM(r.end)} · ${Math.round(r.min)} min`);
 }
 
 /* ============================================================
@@ -1474,8 +1586,15 @@ function init() {
   $('#btnLeak').addEventListener('click', addLeak);
   $('#btnUndo').addEventListener('click', undo);
   $('#btnPause').addEventListener('click', togglePause);
+  $('#editCancel').addEventListener('click', closeEdit);
+  $('#editSave').addEventListener('click', saveEdit);
+  $('#editStart').addEventListener('input', updateEditPreview);
+  $('#editEnd').addEventListener('input', updateEditPreview);
+  $('#editModal').addEventListener('click', e => { if (e.target.id === 'editModal') closeEdit(); });
   $('#btnQuest').addEventListener('click', startQuest);
   $('#log').addEventListener('click', e => {
+    const ed = e.target.closest('[data-edit]');
+    if (ed) { openEdit(ed.dataset.edit); return; }
     const b = e.target.closest('[data-del]');
     if (!b) return;
     if (b.dataset.session && !confirm(`Delete the session ${b.dataset.label}?`)) return;
@@ -1525,6 +1644,7 @@ function init() {
 
   // keyboard shortcuts: S Q L U
   document.addEventListener('keydown', e => {
+    if (!$('#editModal').hidden) { if (e.key === 'Escape') closeEdit(); else if (e.key === 'Enter') { e.preventDefault(); saveEdit(); } return; }
     if (!$('#settings').hidden) { if (e.key === 'Escape') closeSettings(); return; }
     if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
     const tag = (e.target.tagName || '').toLowerCase();
