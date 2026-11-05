@@ -58,7 +58,7 @@ main{padding:16px 20px 48px;max-width:1600px;margin:0 auto}
 .wave{position:absolute;left:0;right:0;overflow:hidden;pointer-events:none}
 .wave .strip{position:absolute;top:0;bottom:0;left:0;background-repeat:repeat-x;will-change:transform}
 #waveBack{bottom:118px;height:72px;z-index:3}
-#island{position:absolute;right:3%;bottom:112px;width:12%;min-width:120px;max-width:180px;z-index:4}
+#island{position:absolute;right:3%;bottom:134px;width:12%;min-width:120px;max-width:180px;z-index:4}
 #ghostShip{bottom:126px;width:130px;z-index:5}
 #waveMid{bottom:50px;height:94px;z-index:6}
 #buoy{position:absolute;left:1.2%;bottom:56px;width:40px;z-index:7}
@@ -71,6 +71,23 @@ main{padding:16px 20px 48px;max-width:1600px;margin:0 auto}
 
 /* EXTRA QUEST: the "camera" pans past the island, which slides to the left */
 #island{transition:right 3s ease-in-out}
+/* white water around the island's base so it sits in the sea without the waves hiding it */
+#island .foam{position:absolute;left:-7%;right:-7%;bottom:-8px;height:20px;border-radius:50%;pointer-events:none;
+  background:radial-gradient(ellipse at 50% 50%,rgba(255,255,255,.88) 0%,rgba(230,247,255,.72) 40%,rgba(180,228,248,.3) 60%,rgba(180,228,248,0) 70%);
+  animation:foam 3.6s ease-in-out infinite}
+#island .foam::before,#island .foam::after{content:"";position:absolute;top:-5px;bottom:6px;left:3%;right:3%;
+  background:
+    radial-gradient(ellipse 7% 45% at 6% 58%,rgba(255,255,255,.95) 55%,transparent 62%),
+    radial-gradient(ellipse 10% 55% at 17% 40%,rgba(255,255,255,.9) 55%,transparent 62%),
+    radial-gradient(ellipse 6% 38% at 29% 62%,rgba(255,255,255,.85) 55%,transparent 62%),
+    radial-gradient(ellipse 11% 50% at 42% 45%,rgba(255,255,255,.95) 55%,transparent 62%),
+    radial-gradient(ellipse 7% 42% at 55% 62%,rgba(255,255,255,.85) 55%,transparent 62%),
+    radial-gradient(ellipse 9% 55% at 68% 42%,rgba(255,255,255,.9) 55%,transparent 62%),
+    radial-gradient(ellipse 6% 38% at 80% 60%,rgba(255,255,255,.9) 55%,transparent 62%),
+    radial-gradient(ellipse 8% 50% at 92% 48%,rgba(255,255,255,.95) 55%,transparent 62%)}
+#island .foam::after{animation:lap 2.8s ease-in-out infinite alternate}
+@keyframes lap{from{transform:translateX(-4%) scaleY(.75);opacity:.3}to{transform:translateX(4%) scaleY(.95);opacity:.7}}
+@keyframes foam{0%,100%{transform:scaleX(1)}50%{transform:scaleX(1.04) translateY(1px)}}
 #buoy{transition:opacity 1s}
 #scene.quest #island{right:82%}
 #scene.quest #buoy{opacity:0}
@@ -266,7 +283,7 @@ svg.chart{width:100%;height:auto;display:block;overflow:visible}
       <div id="markers"></div>
       <div id="seaBase"></div>
       <div id="waveBack" class="wave"></div>
-      <div id="island"><div data-art="island"></div></div>
+      <div id="island"><div data-art="island"></div><div class="foam"></div></div>
       <div id="ghostShip" class="ship">
         <div class="tag" id="ghostTag"></div>
         <div class="sink"><div class="bob"><div data-art="dutchman"></div></div></div>
