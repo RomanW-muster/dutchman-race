@@ -561,9 +561,27 @@ function ghostPlan(key, c = cfg(), firstStart = null) {
     perfectFinishMs: waiting ? null : startMs + perfect * 60000,
     finishMs: waiting ? null : startMs + (perfect + c.ghostBufferMin) * 60000 };
 }
+/* OVERTIME HOLD: while you keep studying past the bell, the Dutchman's clock stops.
+   heldMs = how much of [startMs, nowMs] fell inside your overtime (pauses excluded, so they still cost you). */
+function heldMs(plan, nowMs) {
+  let held = 0;
+  for (const [a, b] of plan.holds || []) held += Math.max(0, Math.min(b, nowMs) - Math.max(a, plan.startMs));
+  return held;
+}
+/* real time at which the Dutchman has sailed `min` minutes of his own clock (skipping your overtime) */
+function ghostTimeAt(plan, min) {
+  let cur = plan.startMs, rem = min * 60000;
+  for (const [a0, b] of (plan.holds || []).slice().sort((x, y) => x[0] - y[0])) {
+    const a = Math.max(a0, cur);
+    if (b <= cur) continue;
+    if (a - cur >= rem) return cur + rem;
+    rem -= a - cur; cur = b;
+  }
+  return cur + rem;
+}
 function ghostPos(plan, nowMs) {
   if (plan.waiting) return 0;
-  let el = (nowMs - plan.startMs) / 60000 / plan.stretch;   // minutes into the (unstretched) perfect day
+  let el = (nowMs - plan.startMs - heldMs(plan, nowMs)) / 60000 / plan.stretch;   // minutes into the (unstretched) perfect day
   if (el <= 0) return 0;
   let pos = 0;
   for (const s of plan.segs) {
@@ -585,12 +603,12 @@ function deriveDay(key, now = Date.now()) {
   const sessions = [], orphans = [], leaks = [], questions = [];
   let open = null;
   // PAUSES: paused time doesn't count toward a session (the Dutchman keeps sailing regardless)
-  const closePause = (s, t) => { if (s.pauseStart != null) { s.pausedMs += Math.max(0, t - s.pauseStart); s.pauseStart = null; } };
+  const closePause = (s, t) => { if (s.pauseStart != null) { s.pausedMs += Math.max(0, t - s.pauseStart); s.pauseList.push([s.pauseStart, t]); s.pauseStart = null; } };
   for (const e of evs) {
     const t = tms(e);
     if (e.type === 'start') {
       if (open) { closePause(open, t); open.end = t; open.auto = true; sessions.push(open); }   // two starts in a row: close the first
-      open = { start: t, startId: e.id, pausedMs: 0, pauseStart: null, pauseIds: [] };
+      open = { start: t, startId: e.id, pausedMs: 0, pauseStart: null, pauseIds: [], pauseList: [] };
     } else if (e.type === 'finish') {
       if (open) { closePause(open, t); open.end = t; open.finishId = e.id; open.auto = !!e.auto; sessions.push(open); open = null; }
       else orphans.push(e);
@@ -628,6 +646,26 @@ function deriveDay(key, now = Date.now()) {
   });
   const runFrac = running ? Math.min(running.min / c.sessionMin, 1) : 0;
   const plan = ghostPlan(key, c, sessions.length ? sessions[0].start : null);
+  // your overtime: active (un-paused) study time past sessionMin in each session
+  plan.holds = [];
+  for (const s of sessions) {
+    const stop = s.running ? now : s.end;
+    const gaps = s.pauseList.concat(s.running && s.paused ? [[s.pauseStart, now]] : []).sort((x, y) => x[0] - y[0]);
+    let cur = s.start, need = c.sessionMin * 60000;   // active ms still to go before the bell
+    const pieces = [];
+    for (const [p0, p1] of gaps) { if (p0 > cur) pieces.push([cur, Math.min(p0, stop)]); cur = Math.max(cur, p1); }
+    if (stop > cur) pieces.push([cur, stop]);
+    for (const [a, b] of pieces) {
+      if (b <= a) continue;
+      if (need >= b - a) { need -= b - a; continue; }
+      plan.holds.push([a + need, b]); need = 0;
+    }
+  }
+  if (!plan.waiting) {
+    plan.finishMs = ghostTimeAt(plan, plan.totalMin);
+    plan.perfectFinishMs = ghostTimeAt(plan, plan.perfect);
+  }
+  const holding = !!(running && !running.paused && running.min >= c.sessionMin);
   const beat = targetEnd != null && plan.finishMs != null && targetEnd <= plan.finishMs;
   // EXTRA QUEST: every session after the island earns a star by length:
   // a full session (50 min) = ★, half a session (25 min) = ½★, shorter = nothing
@@ -640,7 +678,7 @@ function deriveDay(key, now = Date.now()) {
   const extraPos = extraStars + (running && running.extraIdx ? runFrac : 0);
   const quest = completed >= c.target && (!!store.days[key]?.quest || extras.length > 0);
   return {
-    extras, extraStars, extraPos, quest, pausedTotal,
+    extras, extraStars, extraPos, quest, pausedTotal, holding,
     key, events: evs, sessions, orphans, leaks, questions, running, completed,
     targetEnd, lastEnd, firstStart: sessions.length ? sessions[0].start : null,
     finishTime: targetEnd ?? lastEnd, onDeck, breaks,
@@ -936,7 +974,7 @@ function renderLive(now = Date.now()) {
   $('#playerShip .sink').style.transform = `translateY(${(water / 100 * 30).toFixed(1)}px) rotate(${(-water / 100 * 4).toFixed(1)}deg)`;
   $('#ghostShip').classList.toggle('glowing', g >= c.target);
   $('#playerTag').innerHTML = `You · ${d.quest ? '★ ' + d.extraPos.toFixed(1) : d.playerPos.toFixed(1)} <span class="gauge" title="Water in the hull"><i style="width:${water}%"></i></span>${water}%`;
-  $('#ghostTag').textContent = d.quest ? 'Flying Dutchman · left behind' : d.plan.waiting ? 'Flying Dutchman · waiting for you' : `Flying Dutchman · ${g.toFixed(1)}`;
+  $('#ghostTag').textContent = d.quest ? 'Flying Dutchman · left behind' : d.plan.waiting ? 'Flying Dutchman · waiting for you' : d.holding && g < c.target ? `Flying Dutchman · ${g.toFixed(1)} · holding` : `Flying Dutchman · ${g.toFixed(1)}`;
   renderSky(now);
 
   // banner when you reach the island; star tally once you sail on
@@ -971,6 +1009,7 @@ function renderLive(now = Date.now()) {
   if (d.quest) sub = (d.beat ? `You beat the Dutchman by ${fmtDur((d.plan.finishMs - d.targetEnd) / 60000)} and kept sailing.` : `Island reached at ${fmtHM(d.targetEnd)} and you kept sailing.`) + ` Every extra session earns a star: ${c.sessionMin} min = ★, ${c.sessionMin / 2} min = ½★.`;
   else if (d.plan.waiting) sub = `The Dutchman is waiting at the buoy. It sets sail the moment you press S and needs ${fmtDur(d.plan.totalMin)} to reach the island.`;
   else if (now < d.plan.startMs) sub = `The Dutchman sets sail at ${fmtHM(d.plan.startMs)} and reaches the island at ${fmtHM(d.plan.finishMs)}.`;
+  else if (d.holding && g < c.target) sub = `You're in overtime, so the Dutchman is holding position until you finish. He now reaches the island at ${fmtHM(d.plan.finishMs)}.`;
   else if (g < c.target) sub = `${c.ghostMode === 'withMe' ? `The Dutchman set sail with you at ${fmtHM(d.plan.startMs)} and` : 'The Dutchman'} reaches the island at ${fmtHM(d.plan.finishMs)} (a perfect day finishes ${fmtHM(d.plan.perfectFinishMs)}).`;
   else sub = done ? `The Dutchman reached the island at ${fmtHM(d.plan.finishMs)}.` : `The Dutchman reached the island at ${fmtHM(d.plan.finishMs)}. Your race isn't over: keep sailing.`;
   const behindFull = Math.floor(Math.max(0, diff) + 1e-9);
@@ -1006,7 +1045,7 @@ function renderTimer(now = Date.now()) {
     $('#timerLabel').textContent = paused ? `${label} · paused` : label;
     $('#timerBig').textContent = left <= 0 ? '+' + fmtMS(-left) : fmtMS(left);
     $('#timerMsg').textContent = paused ? `Paused ${fmtMS((now - d.running.pauseStart) / 1000)} · the Dutchman keeps sailing`
-      : over ? (xi ? '★ Full star! Stand up. Walk. 10 minutes.' : 'Stand up. Walk. 10 minutes.')
+      : over ? (xi ? '★ Full star! Stand up. Walk. 10 minutes.' : 'Stand up. Walk. 10 minutes. (Keep going if you\'re flying: the Dutchman holds.)')
       : xi ? (elapsedMin >= c.sessionMin / 2 ? `½ star banked · full star at ${c.sessionMin}:00` : `½ star at ${c.sessionMin / 2}:00 · full star at ${c.sessionMin}:00`)
       : `Started ${fmtHM(d.running.start)} · counts after ${c.minSessionMin} min`;
     if (over && !beeped.has(d.running.start)) { beeped.add(d.running.start); beep(); notifyStandUp(label); }
