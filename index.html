@@ -152,6 +152,7 @@ main{padding:16px 20px 48px;max-width:1600px;margin:0 auto}
 .timer.paused .msg{color:#bfe6ff}
 .pause-btn{align-self:center;margin-top:10px;display:inline-flex;align-items:center;gap:8px;background:#1d3a63;border:1px solid var(--water);color:#dff2ff;border-radius:999px;padding:7px 16px;font-weight:800;font-size:14px;letter-spacing:.5px}
 .pause-btn:hover{filter:brightness(1.15)}
+.anchor-btn{border-color:var(--gold);color:var(--gold2);background:#3a2f12}
 .pause-btn kbd{font:700 11px var(--mono);padding:1px 6px;border-radius:5px;background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.3)}
 .timer.over .msg{color:#fff;background:var(--bad);border-radius:10px;padding:7px 10px;font-size:17px;animation:flash 1.1s steps(2,start) infinite}
 @keyframes flash{50%{opacity:.35}}
@@ -315,6 +316,7 @@ svg.chart{width:100%;height:auto;display:block;overflow:visible}
         <div class="lbl" id="timerLabel">Ready</div>
         <div class="big" id="timerBig">50:00</div>
         <div class="msg" id="timerMsg"></div>
+        <button class="pause-btn anchor-btn" id="btnAnchor" hidden title="End the day as a pass (shows once you've reached 7)">⚓ Drop anchor</button>
         <button class="pause-btn" id="btnPause" hidden title="Pause this session (the Dutchman keeps going)"><span class="plbl">⏸ Pause</span><kbd>P</kbd></button>
       </div>
       <div>
@@ -466,7 +468,7 @@ const ART = {
 };
 
 const STORE_KEY = 'dutchmanRace_v1';
-const EVENT_TYPES = ['start', 'finish', 'question', 'leak', 'pause', 'resume'];
+const EVENT_TYPES = ['start', 'finish', 'question', 'leak', 'pause', 'resume', 'anchor'];
 const RESULT = {
   beat: { icon: '✅', text: 'Beat the Dutchman' },
   pass: { icon: '⚓', text: 'Pass day' },
@@ -486,6 +488,7 @@ const fmtHM = ms => { const d = new Date(ms); return pad(d.getHours()) + ':' + p
 const fmtMS = sec => { sec = Math.max(0, Math.floor(sec)); return pad(Math.floor(sec / 60)) + ':' + pad(sec % 60); };
 const fmtDur = min => { min = Math.round(min); const h = Math.floor(min / 60), m = min % 60; return h ? `${h}h ${pad(m)}m` : `${m}m`; };
 const fmtStars = n => (Math.floor(n) || (n % 1 ? '' : '0')) + (n % 1 ? '½' : '');   // 2.5 → "2½", 0.5 → "½"
+const fmtPass = d => d.bankedMin ? `${d.completed} + ${(d.bankedMin / cfg().sessionMin).toFixed(2)} banked = ${d.passTotal.toFixed(2)}` : `${d.completed} session${d.completed === 1 ? '' : 's'}`;
 const otFrac = d => (d.overtimeMin / cfg().sessionMin).toFixed(2);   // 23 min → "0.46"
 const starWord = n => `${fmtStars(n)} star${n === 1 ? '' : 's'}`;
 const fmtMinOfDay = m => pad(Math.floor(m / 60) % 24) + ':' + pad(Math.round(m % 60));
@@ -602,7 +605,7 @@ function deriveDay(key, now = Date.now()) {
   const c = cfg();
   const evs = (store.days[key]?.events || []).slice().sort((a, b) => tms(a) - tms(b));
   const { end: dayEnd } = dayBounds(key);
-  const sessions = [], orphans = [], leaks = [], questions = [];
+  const sessions = [], orphans = [], leaks = [], questions = [], anchors = [];
   let open = null;
   // PAUSES: paused time doesn't count toward a session (the Dutchman keeps sailing regardless)
   const closePause = (s, t) => { if (s.pauseStart != null) { s.pausedMs += Math.max(0, t - s.pauseStart); s.pauseList.push([s.pauseStart, t]); s.pauseStart = null; } };
@@ -620,6 +623,7 @@ function deriveDay(key, now = Date.now()) {
       if (open && open.pauseStart != null) { closePause(open, t); open.pauseIds.push(e.id); } else orphans.push(e);
     } else if (e.type === 'question') questions.push(e);
     else if (e.type === 'leak') leaks.push(e);
+    else if (e.type === 'anchor') anchors.push(e);
   }
   if (open) {
     if (now >= dayEnd) { closePause(open, dayEnd); open.end = dayEnd; open.auto = true; open.openAtEnd = true; }
@@ -669,6 +673,13 @@ function deriveDay(key, now = Date.now()) {
   }
   const holding = !!(running && !running.paused && running.min >= c.sessionMin);
   const beat = targetEnd != null && plan.finishMs != null && targetEnd <= plan.finishMs;
+  // PASS (floor) = finished sessions + overtime banked from FINISHED sessions (whole minutes), must reach the floor exactly.
+  // Overtime never counts toward the island/10; a running session counts nothing until you finish it.
+  const bankedMin = Math.round(sessions.filter(s => !s.running).reduce((a, s) => a + Math.max(0, s.min - c.sessionMin), 0));
+  const passTotal = completed + bankedMin / c.sessionMin;
+  // DROP ANCHOR: freezes the race for the day; starting another session lifts it
+  const lastAnchor = anchors.length ? anchors[anchors.length - 1] : null;
+  const anchored = !!lastAnchor && !running && !sessions.some(s => s.start > tms(lastAnchor));
   // EXTRA QUEST: every session after the island earns a star by length:
   // a full session (50 min) = ★, half a session (25 min) = ½★, shorter = nothing
   const extras = targetEnd == null ? [] : sessions.filter(s => s.start >= targetEnd);
@@ -687,7 +698,8 @@ function deriveDay(key, now = Date.now()) {
     targetEnd, lastEnd, firstStart: sessions.length ? sessions[0].start : null,
     finishTime: targetEnd ?? lastEnd, onDeck, breaks,
     playerPos: Math.min(completed + runFrac, c.target),
-    plan, beat, result: beat ? 'beat' : completed >= c.floor ? 'pass' : 'fail', dayEnd,
+    bankedMin, passTotal, anchored, anchorT: anchored ? tms(lastAnchor) : null, anchorId: lastAnchor ? lastAnchor.id : null,
+    plan, beat, result: beat ? 'beat' : passTotal >= c.floor - 1e-9 ? 'pass' : 'fail', dayEnd,
   };
 }
 function waterLevel(d, ghost) {
@@ -874,6 +886,12 @@ function toggleSession() {
     toast(`Session ${d.completed + 1} started. ${c.sessionMin}:00 on the clock`);
   }
 }
+function dropAnchor() {
+  const c = cfg(), d = deriveDay(todayKey());
+  if (d.running || d.passTotal < c.floor - 1e-9) { toast(`Anchor unlocks at ${c.floor}. Finish your session first`); return; }
+  pushEvent('anchor');
+  toast(`⚓ Anchored: ${fmtPass(d)}. Pass day locked in. Rest up!`);
+}
 function togglePause() {
   const d = deriveDay(todayKey());
   if (!d.running) { toast('No session running to pause'); return; }
@@ -918,7 +936,7 @@ function findEvent(id) {
   }
   return null;
 }
-const ACTION_NAME = { start: 'session start', finish: 'session finish', question: '+1 question', leak: 'leak', pause: 'pause', resume: 'resume' };
+const ACTION_NAME = { start: 'session start', finish: 'session finish', question: '+1 question', leak: 'leak', pause: 'pause', resume: 'resume', anchor: 'drop anchor' };
 function undo() {
   if (pendingLeakId) closeLeakNote(false);
   const day = store.days[todayKey()];
@@ -966,7 +984,7 @@ function renderMarkers(d) {
 let lastLive = 0;
 function renderLive(now = Date.now()) {
   lastLive = now;
-  const c = cfg(), d = deriveDay(todayKey(), now), g = ghostPos(d.plan, now);
+  const c = cfg(), d = deriveDay(todayKey(), now), g = ghostPos(d.plan, d.anchored ? d.anchorT : now);   // anchored: race frozen
   const water = waterLevel(d, g);
 
   // ships (on the extra quest the ghost is left behind at the island)
@@ -1003,14 +1021,16 @@ function renderLive(now = Date.now()) {
   // status line
   const diff = g - d.playerPos, a = Math.abs(diff).toFixed(1);
   let st;
-  if (d.quest) st = `Extra quest: <b class="ahead">${starWord(d.extraStars)}</b> past the island`;
+  if (d.anchored) st = `⚓ Anchored for the day: <b class="ahead">${fmtPass(d)}</b>`;
+  else if (d.quest) st = `Extra quest: <b class="ahead">${starWord(d.extraStars)}</b> past the island`;
   else if (done) st = d.beat ? `You outran the Dutchman by <b class="ahead">${fmtDur((d.plan.finishMs - d.targetEnd) / 60000)}</b>` : `You made the island · the Dutchman beat you there`;
   else if (Math.abs(diff) < 0.05) st = `You are <b>level</b> with the Dutchman`;
   else st = `You are <b>${a}</b> session${a === '1.0' ? '' : 's'} <b class="${diff > 0 ? 'behind' : 'ahead'}">${diff > 0 ? 'behind' : 'ahead of'}</b> the Dutchman`;
   $('#status').innerHTML = st;
 
   let sub;
-  if (d.quest) sub = (d.beat ? `You beat the Dutchman by ${fmtDur((d.plan.finishMs - d.targetEnd) / 60000)} and kept sailing.` : `Island reached at ${fmtHM(d.targetEnd)} and you kept sailing.`) + ` Every extra session earns a star: ${c.sessionMin} min = ★, ${c.sessionMin / 2} min = ½★.`;
+  if (d.anchored) sub = `Pass day locked in. The race is frozen, so rest up. Press S if you change your mind and the race picks back up.`;
+  else if (d.quest) sub = (d.beat ? `You beat the Dutchman by ${fmtDur((d.plan.finishMs - d.targetEnd) / 60000)} and kept sailing.` : `Island reached at ${fmtHM(d.targetEnd)} and you kept sailing.`) + ` Every extra session earns a star: ${c.sessionMin} min = ★, ${c.sessionMin / 2} min = ½★.`;
   else if (d.plan.waiting) sub = `The Dutchman is waiting at the buoy. It sets sail the moment you press S and needs ${fmtDur(d.plan.totalMin)} to reach the island.`;
   else if (now < d.plan.startMs) sub = `The Dutchman sets sail at ${fmtHM(d.plan.startMs)} and reaches the island at ${fmtHM(d.plan.finishMs)}.`;
   else if (d.holding && g < c.target) sub = `You're in overtime, so the Dutchman is holding position until you finish. He now reaches the island at ${fmtHM(d.plan.finishMs)}.`;
@@ -1038,6 +1058,8 @@ function renderTimer(now = Date.now()) {
   let over = false;
   const pb = $('#btnPause'), paused = !!(d.running && d.running.paused);
   pb.hidden = !d.running;
+  // Drop anchor: only once you've reached the floor (7), not running, not already anchored, island not reached
+  $('#btnAnchor').hidden = !!d.running || d.anchored || d.completed >= c.target || d.passTotal < c.floor - 1e-9;
   pb.querySelector('.plbl').textContent = paused ? '▶ Resume' : '⏸ Pause';
   el.classList.toggle('paused', paused);
   if (d.running) {
@@ -1055,7 +1077,11 @@ function renderTimer(now = Date.now()) {
     if (over && !beeped.has(d.running.start)) { beeped.add(d.running.start); beep(); notifyStandUp(label); }
     document.title = paused ? `⏸ Paused · ${label} · Dutchman Race` : over ? '⏰ Stand up! · Dutchman Race' : `${fmtMS(left)} · ${label} · Dutchman Race`;
   } else {
-    if (d.quest) {
+    if (d.anchored) {
+      $('#timerLabel').textContent = 'Anchored for the day';
+      $('#timerBig').textContent = `⚓ ${d.passTotal.toFixed(2).replace(/\.00$/, '')}`;
+      $('#timerMsg').textContent = 'Pass day locked in · S to sail again';
+    } else if (d.quest) {
       $('#timerLabel').textContent = 'Extra quest';
       $('#timerBig').textContent = `★ ${fmtStars(d.extraStars)}`;
       $('#timerMsg').textContent = `Press S for extra session ${d.extras.length + 1}`;
@@ -1092,6 +1118,7 @@ function renderLog(d = deriveDay(todayKey())) {
   }
   for (const e of d.questions) items.push({ t: tms(e), time: fmtHM(tms(e)), what: `<span class="icon sm" data-art="doubloon"></span>+1 question`, ids: [e.id] });
   for (const e of d.leaks) items.push({ t: tms(e), time: fmtHM(tms(e)), what: `<span class="icon sm" data-art="leak"></span>Leak${e.note ? ` · <span class="note">${esc(e.note)}</span>` : ''}`, ids: [e.id] });
+  for (const e of d.events.filter(e => e.type === 'anchor')) items.push({ t: tms(e), time: fmtHM(tms(e)), what: `⚓ Dropped anchor`, ids: [e.id] });
   for (const e of d.orphans) items.push({ t: tms(e), time: fmtHM(tms(e)), what: `${ACTION_NAME[e.type]} with no session to go with it`, ids: [e.id] });
   items.sort((a, b) => b.t - a.t);
   const ul = $('#log');
@@ -1123,7 +1150,8 @@ function renderSummary(d, g, now) {
     ['Time in breaks', fmtDur(d.breaks) + (curBreak && d.completed < c.target ? ` (+${fmtDur(curBreak)} now)` : '')],
     ...(d.pausedTotal >= 0.5 ? [['Time paused', fmtDur(d.pausedTotal)]] : []),
     ['Beating the Dutchman?', ghostLine],
-    ['Day so far', `${RESULT[d.result].icon} ${RESULT[d.result].text}`],
+    ...(d.completed < c.floor && d.bankedMin > 0 ? [[`Toward the ${c.floor}`, `${fmtPass(d)}${d.passTotal >= c.floor - 1e-9 ? ' ✓' : ''}`]] : []),
+    ['Day so far', `${RESULT[d.result].icon} ${RESULT[d.result].text}${d.anchored ? ' · anchored' : ''}`],
   ];
   $('#summary').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
 }
@@ -1131,7 +1159,7 @@ function renderSummary(d, g, now) {
 /* ============================================================
    RENDER: LOGBOOK
    ============================================================ */
-function isPass(k) { return deriveDay(k).completed >= cfg().floor; }
+function isPass(k) { return deriveDay(k).result !== 'fail'; }
 function streaks() {
   const keys = Object.keys(store.days).filter(k => store.days[k].events.length).sort();
   const tk = todayKey();
@@ -1647,6 +1675,7 @@ function init() {
   $('#btnLeak').addEventListener('click', addLeak);
   $('#btnUndo').addEventListener('click', undo);
   $('#btnPause').addEventListener('click', togglePause);
+  $('#btnAnchor').addEventListener('click', dropAnchor);
   $('#editCancel').addEventListener('click', closeEdit);
   $('#editSave').addEventListener('click', saveEdit);
   $('#editStart').addEventListener('input', updateEditPreview);
