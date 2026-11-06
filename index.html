@@ -208,6 +208,7 @@ table.book{width:100%;border-collapse:collapse;font-size:16px}
 .book td{padding:11px 12px;border-bottom:1px solid rgba(255,255,255,.06)}
 .book td.num{font-family:var(--mono)}
 .book td.res{font-size:22px}
+.book .ot{color:var(--gold2);font-size:14px}
 .book tr:hover td{background:rgba(255,255,255,.03)}
 
 /* ============================================================
@@ -485,6 +486,7 @@ const fmtHM = ms => { const d = new Date(ms); return pad(d.getHours()) + ':' + p
 const fmtMS = sec => { sec = Math.max(0, Math.floor(sec)); return pad(Math.floor(sec / 60)) + ':' + pad(sec % 60); };
 const fmtDur = min => { min = Math.round(min); const h = Math.floor(min / 60), m = min % 60; return h ? `${h}h ${pad(m)}m` : `${m}m`; };
 const fmtStars = n => (Math.floor(n) || (n % 1 ? '' : '0')) + (n % 1 ? '½' : '');   // 2.5 → "2½", 0.5 → "½"
+const otFrac = d => (d.overtimeMin / cfg().sessionMin).toFixed(2);   // 23 min → "0.46"
 const starWord = n => `${fmtStars(n)} star${n === 1 ? '' : 's'}`;
 const fmtMinOfDay = m => pad(Math.floor(m / 60) % 24) + ':' + pad(Math.round(m % 60));
 
@@ -679,6 +681,8 @@ function deriveDay(key, now = Date.now()) {
   const quest = completed >= c.target && (!!store.days[key]?.quest || extras.length > 0);
   return {
     extras, extraStars, extraPos, quest, pausedTotal, holding,
+    // OVERTIME BANK: active study past the bell in each session (pauses excluded), shown as a fraction of a session
+    overtimeMin: sessions.reduce((a, s) => a + Math.max(0, s.min - c.sessionMin), 0),
     key, events: evs, sessions, orphans, leaks, questions, running, completed,
     targetEnd, lastEnd, firstStart: sessions.length ? sessions[0].start : null,
     finishTime: targetEnd ?? lastEnd, onDeck, breaks,
@@ -1110,7 +1114,8 @@ function renderSummary(d, g, now) {
   }
   const rows = [
     ['First start', d.firstStart ? fmtHM(d.firstStart) : '—'],
-    ['Sessions', `${Math.min(d.completed, c.target)} / ${c.target}` + (shortN ? ` (+${shortN} short)` : '')],
+    ['Sessions', `${Math.min(d.completed, c.target)} / ${c.target}` + (d.overtimeMin >= 0.5 ? ` + ${otFrac(d)}` : '') + (shortN ? ` (+${shortN} short)` : '')],
+    ...(d.overtimeMin >= 0.5 ? [['Overtime banked', `${fmtDur(d.overtimeMin)} = ${otFrac(d)} of a session`]] : []),
     ...(d.quest ? [['Extra quest', `★ ${starWord(d.extraStars)} from ${d.extras.filter(s => !s.running).length} session${d.extras.filter(s => !s.running).length === 1 ? '' : 's'}`]] : []),
     ['Questions', d.questions.length],
     ['Leaks', d.leaks.length],
@@ -1154,7 +1159,7 @@ function renderLogbook() {
     return `<tr>
       <td>${dateLabel(k)}${k === tk ? ' <span class="pill run">today</span>' : ''}</td>
       <td class="num">${d.firstStart ? fmtHM(d.firstStart) : '—'}</td>
-      <td class="num">${Math.min(d.completed, c.target)} / ${c.target}${d.extraStars ? ` <span class="pill run" title="Extra quest stars past the island">+${fmtStars(d.extraStars)} ★</span>` : ''}</td>
+      <td class="num">${Math.min(d.completed, c.target)} / ${c.target}${d.overtimeMin >= 0.5 ? ` <span class="ot" title="${fmtDur(d.overtimeMin)} of overtime, banked as a fraction of a session">+ ${otFrac(d)}</span>` : ''}${d.extraStars ? ` <span class="pill run" title="Extra quest stars past the island">+${fmtStars(d.extraStars)} ★</span>` : ''}</td>
       <td class="num">${d.questions.length}</td>
       <td class="num">${d.leaks.length}</td>
       <td class="num">${d.finishTime ? fmtHM(d.finishTime) : '—'}</td>
