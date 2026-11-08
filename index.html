@@ -138,6 +138,13 @@ main{padding:16px 20px 48px;max-width:1600px;margin:0 auto}
 .status b.behind{color:var(--bad)}
 .status b.ahead{color:var(--good)}
 .clock{font:700 30px/1 var(--mono);color:var(--gold2)}
+.status-right{display:flex;align-items:center;gap:22px}
+.eta{text-align:right;line-height:1.25}
+.eta .big{font:700 15px system-ui,sans-serif;color:var(--muted);letter-spacing:.5px}
+.eta .big b{font:700 24px var(--mono);color:var(--ink);margin-left:6px}
+.eta .sub{font-size:13px;color:var(--muted)}
+.eta .sub .win{color:var(--good);font-weight:700}
+.eta .sub .lose{color:var(--bad);font-weight:700}
 .clock small{font:500 15px system-ui,sans-serif;color:var(--muted);margin-right:10px}
 .substatus{color:var(--muted);margin:2px 4px 14px;font-size:15px}
 .controls{display:grid;grid-template-columns:minmax(260px,340px) 1fr;gap:16px}
@@ -307,7 +314,10 @@ svg.chart{width:100%;height:auto;display:block;overflow:visible}
 
     <div class="status-row">
       <div class="status" id="status"></div>
-      <div class="clock" id="clock"></div>
+      <div class="status-right">
+        <div class="eta" id="eta" title="When you'd reach the island sticking to the plan from now: 50 on, 10 off, lunch after 4, dinner after 8"></div>
+        <div class="clock" id="clock"></div>
+      </div>
     </div>
     <div class="substatus" id="substatus"></div>
 
@@ -1039,12 +1049,50 @@ function renderLive(now = Date.now()) {
   const behindFull = Math.floor(Math.max(0, diff) + 1e-9);
   sub += ` Hull water ${water}%: ${d.leaks.length} leak${d.leaks.length === 1 ? '' : 's'} × ${c.leakPct}%` + (behindFull ? ` + ${behindFull} full session${behindFull === 1 ? '' : 's'} behind × ${c.behindPct}%.` : '.');
   $('#substatus').textContent = sub;
+  renderETA(d, g, now);
 
   $('#qCount').textContent = `${d.questions.length} today`;
   $('#lCount').textContent = `${d.leaks.length} today`;
   renderSummary(d, g, now);
 }
 
+/* ETA: when you'd reach the island if you stick to the plan from now
+   (finish the current session at 50:00, then 50 on / planned breaks / 50 on ...) */
+const breakAfter = (i, c) => i === c.lunchAfter ? c.lunchMin : i === c.dinnerAfter ? c.dinnerMin : c.breakMin;
+function projectETA(d, now) {
+  const c = cfg();
+  if (d.completed >= c.target) return { arrived: d.targetEnd };
+  let n = d.completed, start;
+  if (d.running) {
+    const end = now + Math.max(0, c.sessionMin - d.running.min) * 60000;   // paused? assumes you resume now
+    n += 1;
+    if (n >= c.target) return { eta: end };
+    start = end + breakAfter(n, c) * 60000;
+  } else if (n > 0 && d.lastEnd != null) start = Math.max(now, d.lastEnd + breakAfter(n, c) * 60000);   // rest of the planned break
+  else start = now;
+  let t = start;
+  while (true) {
+    t += c.sessionMin * 60000; n += 1;
+    if (n >= c.target) return { eta: t, notStarted: !d.sessions.length };
+    t += breakAfter(n, c) * 60000;
+  }
+}
+function renderETA(d, g, now) {
+  const el = $('#eta'), c = cfg();
+  if (d.anchored || d.quest) { el.innerHTML = ''; return; }
+  const p = projectETA(d, now);
+  if (p.arrived) { el.innerHTML = `<div class="big">Reached the island<b>${fmtHM(p.arrived)}</b></div>`; return; }
+  const late = p.eta >= d.dayEnd ? ' · past the 4am cutoff!' : '';
+  // the Dutchman's arrival (head-to-head and not started yet: he'd leave when you do)
+  const ghostAt = d.plan.waiting ? now + d.plan.totalMin * 60000 : d.plan.finishMs;
+  let vs;
+  if (!d.plan.waiting && g >= c.target) vs = `Dutchman arrived ${fmtHM(d.plan.finishMs)}`;
+  else {
+    const diff = (ghostAt - p.eta) / 60000;
+    vs = `Dutchman ${fmtHM(ghostAt)} · ` + (Math.abs(diff) < 1 ? 'dead heat' : diff > 0 ? `<span class="win">on pace to win by ${fmtDur(diff)}</span>` : `<span class="lose">he wins by ${fmtDur(-diff)}</span>`);
+  }
+  el.innerHTML = `<div class="big">ETA${p.notStarted ? ' if you start now' : ''}<b>${fmtHM(p.eta)}</b></div><div class="sub">${vs}${late}</div>`;
+}
 function renderClock(now = Date.now()) {
   $('#clock').innerHTML = `<small>${dateLabel(keyOf(new Date(now)))}</small>${fmtHM(now)}`;
 }
