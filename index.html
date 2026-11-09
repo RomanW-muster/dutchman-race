@@ -652,7 +652,17 @@ function deriveDay(key, now = Date.now()) {
   const running = sessions.find(s => s.running) || null;
   const done = sessions.filter(s => !s.running);
   const completedList = sessions.filter(s => s.completed);
-  const targetEnd = completedList.length >= c.target ? completedList[c.target - 1].end : null;
+  // REACHING 10, two ways (overtime counts exactly once either way):
+  //  real   = 10 finished sessions; the Dutchman holds during your overtime
+  //  credit = finished sessions + banked overtime reaches 10.00; overtime counts as progress, so he does NOT hold
+  const realTargetEnd = completedList.length >= c.target ? completedList[c.target - 1].end : null;
+  let creditTargetEnd = null;
+  { let n = 0, ot = 0;
+    for (const s of done.slice().sort((a, b) => a.end - b.end)) {
+      if (s.completed) n++;
+      ot += Math.max(0, s.min - c.sessionMin);
+      if (n + Math.round(ot) / c.sessionMin >= c.target - 1e-9) { creditTargetEnd = s.end; break; }
+    } }
   const lastEnd = done.length ? Math.max(...done.map(s => s.end)) : null;
   let onDeck = 0, breaks = 0, pausedTotal = 0;
   sessions.forEach((s, i) => {
@@ -677,14 +687,23 @@ function deriveDay(key, now = Date.now()) {
       plan.holds.push([a + need, b]); need = 0;
     }
   }
+  const finishHeld = plan.waiting ? null : ghostTimeAt(plan, plan.totalMin);
+  const finishFree = plan.waiting ? null : plan.startMs + plan.totalMin * 60000;
+  const realBeat = realTargetEnd != null && finishHeld != null && realTargetEnd <= finishHeld;
+  const creditBeat = creditTargetEnd != null && finishFree != null && creditTargetEnd <= finishFree;
+  const path = realBeat ? 'real' : creditBeat ? 'credit' : realTargetEnd != null ? 'real' : creditTargetEnd != null ? 'credit' : null;
+  if (path === 'credit') plan.holds = [];   // your overtime already counted as progress, so he doesn't also wait for it
   if (!plan.waiting) {
     plan.finishMs = ghostTimeAt(plan, plan.totalMin);
     plan.perfectFinishMs = ghostTimeAt(plan, plan.perfect);
   }
-  const holding = !!(running && !running.paused && running.min >= c.sessionMin);
-  const beat = targetEnd != null && plan.finishMs != null && targetEnd <= plan.finishMs;
+  plan.finishFreeMs = finishFree;
+  const targetEnd = path === 'real' ? realTargetEnd : path === 'credit' ? creditTargetEnd : null;
+  const reached = targetEnd != null;
+  const holding = !!(running && !running.paused && running.min >= c.sessionMin) && path !== 'credit';
+  const beat = path === 'real' ? realBeat : path === 'credit' ? creditBeat : false;
   // PASS (floor) = finished sessions + overtime banked from FINISHED sessions (whole minutes), must reach the floor exactly.
-  // Overtime never counts toward the island/10; a running session counts nothing until you finish it.
+  // A running session counts nothing until you finish it. (Toward 10: see REACHING 10 above.)
   const bankedMin = Math.round(sessions.filter(s => !s.running).reduce((a, s) => a + Math.max(0, s.min - c.sessionMin), 0));
   const passTotal = completed + bankedMin / c.sessionMin;
   // DROP ANCHOR: freezes the race for the day; starting another session lifts it
@@ -699,7 +718,7 @@ function deriveDay(key, now = Date.now()) {
   });
   const extraStars = extras.reduce((a, s) => a + s.star, 0);
   const extraPos = extraStars + (running && running.extraIdx ? runFrac : 0);
-  const quest = completed >= c.target && (!!store.days[key]?.quest || extras.length > 0);
+  const quest = reached && (!!store.days[key]?.quest || extras.length > 0);
   return {
     extras, extraStars, extraPos, quest, pausedTotal, holding,
     // OVERTIME BANK: active study past the bell in each session (pauses excluded), shown as a fraction of a session
@@ -707,7 +726,8 @@ function deriveDay(key, now = Date.now()) {
     key, events: evs, sessions, orphans, leaks, questions, running, completed,
     targetEnd, lastEnd, firstStart: sessions.length ? sessions[0].start : null,
     finishTime: targetEnd ?? lastEnd, onDeck, breaks,
-    playerPos: Math.min(completed + runFrac, c.target),
+    playerPos: reached ? c.target : Math.min(completed + runFrac, c.target),
+    path, reached, realTargetEnd, creditTargetEnd,
     bankedMin, passTotal, anchored, anchorT: anchored ? tms(lastAnchor) : null, anchorId: lastAnchor ? lastAnchor.id : null,
     plan, beat, result: beat ? 'beat' : passTotal >= c.floor - 1e-9 ? 'pass' : 'fail', dayEnd,
   };
@@ -1010,7 +1030,7 @@ function renderLive(now = Date.now()) {
   renderSky(now);
 
   // banner when you reach the island; star tally once you sail on
-  const done = d.completed >= c.target;
+  const done = d.reached;
   $('#banner').hidden = !done || d.quest;
   if (done) $('#banner .txt').textContent = d.beat ? 'You outran the Flying Dutchman!' : 'Island reached. The Dutchman got there first.';
   $('#questBadge').hidden = !d.quest;
@@ -1061,21 +1081,25 @@ function renderLive(now = Date.now()) {
 const breakAfter = (i, c) => i === c.lunchAfter ? c.lunchMin : i === c.dinnerAfter ? c.dinnerMin : c.breakMin;
 function projectETA(d, now) {
   const c = cfg();
-  if (d.completed >= c.target) return { arrived: d.targetEnd };
-  let n = d.completed, start;
-  if (d.running) {
-    const end = now + Math.max(0, c.sessionMin - d.running.min) * 60000;   // paused? assumes you resume now
-    n += 1;
-    if (n >= c.target) return { eta: end };
-    start = end + breakAfter(n, c) * 60000;
-  } else if (n > 0 && d.lastEnd != null) start = Math.max(now, d.lastEnd + breakAfter(n, c) * 60000);   // rest of the planned break
-  else start = now;
-  let t = start;
-  while (true) {
-    t += c.sessionMin * 60000; n += 1;
-    if (n >= c.target) return { eta: t, notStarted: !d.sessions.length };
-    t += breakAfter(n, c) * 60000;
-  }
+  if (d.reached) return { arrived: d.targetEnd };
+  // when would the Nth further session finish, sticking to plan (finish the current one at 50:00 / now if in overtime)
+  const finishAfter = needed => {
+    let n = d.completed, t;
+    if (d.running) {
+      t = now + Math.max(0, c.sessionMin - d.running.min) * 60000; n++;   // paused? assumes you resume now
+      if (--needed <= 0) return t;
+      t += breakAfter(n, c) * 60000;
+    } else if (n > 0 && d.lastEnd != null) t = Math.max(now, d.lastEnd + breakAfter(n, c) * 60000);
+    else t = now;
+    while (true) { t += c.sessionMin * 60000; n++; if (--needed <= 0) return t; t += breakAfter(n, c) * 60000; }
+  };
+  const runOT = d.running ? Math.max(0, d.running.min - c.sessionMin) : 0;              // banked if you finish now
+  const banked = Math.round(d.bankedMin + runOT) / c.sessionMin;
+  const waitingGhost = now + d.plan.totalMin * 60000;                                      // head-to-head, not started
+  const real = { eta: finishAfter(c.target - d.completed), ghost: d.plan.waiting ? waitingGhost : d.plan.finishMs };
+  const credit = { eta: finishAfter(Math.max(1, Math.ceil(c.target - d.completed - banked - 1e-9))), ghost: d.plan.waiting ? waitingGhost : d.plan.finishFreeMs, credit: true };
+  const best = (credit.eta < real.eta && credit.ghost - credit.eta >= real.ghost - real.eta) ? credit : real;   // better result; on a tie, the earlier arrival
+  return { ...best, notStarted: !d.sessions.length };
 }
 function renderETA(d, g, now) {
   const el = $('#eta'), c = cfg();
@@ -1083,15 +1107,13 @@ function renderETA(d, g, now) {
   const p = projectETA(d, now);
   if (p.arrived) { el.innerHTML = `<div class="big">Reached the island<b>${fmtHM(p.arrived)}</b></div>`; return; }
   const late = p.eta >= d.dayEnd ? ' · past the 4am cutoff!' : '';
-  // the Dutchman's arrival (head-to-head and not started yet: he'd leave when you do)
-  const ghostAt = d.plan.waiting ? now + d.plan.totalMin * 60000 : d.plan.finishMs;
   let vs;
-  if (!d.plan.waiting && g >= c.target) vs = `Dutchman arrived ${fmtHM(d.plan.finishMs)}`;
+  if (!d.plan.waiting && g >= c.target && !p.credit) vs = `Dutchman arrived ${fmtHM(d.plan.finishMs)}`;
   else {
-    const diff = (ghostAt - p.eta) / 60000;
-    vs = `Dutchman ${fmtHM(ghostAt)} · ` + (Math.abs(diff) < 1 ? 'dead heat' : diff > 0 ? `<span class="win">on pace to win by ${fmtDur(diff)}</span>` : `<span class="lose">he wins by ${fmtDur(-diff)}</span>`);
+    const diff = (p.ghost - p.eta) / 60000;
+    vs = `Dutchman ${fmtHM(p.ghost)} · ` + (Math.abs(diff) < 1 ? 'dead heat' : diff > 0 ? `<span class="win">on pace to win by ${fmtDur(diff)}</span>` : `<span class="lose">he wins by ${fmtDur(-diff)}</span>`);
   }
-  el.innerHTML = `<div class="big">ETA${p.notStarted ? ' if you start now' : ''}<b>${fmtHM(p.eta)}</b></div><div class="sub">${vs}${late}</div>`;
+  el.innerHTML = `<div class="big">ETA${p.notStarted ? ' if you start now' : p.credit ? ' with overtime' : ''}<b>${fmtHM(p.eta)}</b></div><div class="sub">${vs}${late}</div>`;
 }
 function renderClock(now = Date.now()) {
   $('#clock').innerHTML = `<small>${dateLabel(keyOf(new Date(now)))}</small>${fmtHM(now)}`;
@@ -1107,7 +1129,7 @@ function renderTimer(now = Date.now()) {
   const pb = $('#btnPause'), paused = !!(d.running && d.running.paused);
   pb.hidden = !d.running;
   // Drop anchor: only once you've reached the floor (7), not running, not already anchored, island not reached
-  $('#btnAnchor').hidden = !!d.running || d.anchored || d.completed >= c.target || d.passTotal < c.floor - 1e-9;
+  $('#btnAnchor').hidden = !!d.running || d.anchored || d.reached || d.passTotal < c.floor - 1e-9;
   pb.querySelector('.plbl').textContent = paused ? '▶ Resume' : '⏸ Pause';
   el.classList.toggle('paused', paused);
   if (d.running) {
@@ -1133,9 +1155,9 @@ function renderTimer(now = Date.now()) {
       $('#timerLabel').textContent = 'Extra quest';
       $('#timerBig').textContent = `★ ${fmtStars(d.extraStars)}`;
       $('#timerMsg').textContent = `Press S for extra session ${d.extras.length + 1}`;
-    } else if (d.completed >= c.target) {
-      $('#timerLabel').textContent = 'Island reached';
-      $('#timerBig').textContent = `${c.target}/${c.target}`;
+    } else if (d.reached) {
+      $('#timerLabel').textContent = d.path === 'credit' ? 'Island reached (with overtime)' : 'Island reached';
+      $('#timerBig').textContent = d.path === 'credit' ? d.passTotal.toFixed(2) : `${c.target}/${c.target}`;
       $('#timerMsg').textContent = 'Sail on: Extra Quest, or press S';
     } else if (d.lastEnd) {
       $('#timerLabel').textContent = 'On break';
@@ -1192,7 +1214,7 @@ function renderSummary(d, g, now) {
   const curBreak = !d.running && d.lastEnd ? (now - d.lastEnd) / 60000 : 0;
   const st = studyStats(d, now);
   let ghostLine;
-  if (d.completed >= c.target) ghostLine = d.beat ? '✅ Yes, you beat it' : '⚓ Finished after it';
+  if (d.reached) ghostLine = (d.beat ? '✅ Yes, you beat it' : '⚓ Finished after it') + (d.path === 'credit' ? ' (with overtime)' : '');
   else if (g >= c.target) ghostLine = `No, it reached the island at ${fmtHM(d.plan.finishMs)}`;
   else {
     const diff = g - d.playerPos;
@@ -1206,12 +1228,13 @@ function renderSummary(d, g, now) {
     ['Questions', d.questions.length],
     ['Leaks', d.leaks.length],
     ['Time on deck', fmtDur(d.onDeck)],
-    ['Time in breaks', fmtDur(d.breaks) + (curBreak && d.completed < c.target ? ` (+${fmtDur(curBreak)} now)` : '')],
+    ['Time in breaks', fmtDur(d.breaks) + (curBreak && !d.reached ? ` (+${fmtDur(curBreak)} now)` : '')],
     ...(d.pausedTotal >= 0.5 ? [['Time paused', fmtDur(d.pausedTotal)]] : []),
     ...(st ? [['Not studying', `${fmtDur(st.off)} (breaks + pauses)`],
               ['Studying', st.pct == null ? '—' : `${st.pct}% of ${fmtDur(st.span)} since ${fmtHM(d.firstStart)}`]] : []),
     ['Beating the Dutchman?', ghostLine],
     ...(d.completed < c.floor && d.bankedMin > 0 ? [[`Toward the ${c.floor}`, `${fmtPass(d)}${d.passTotal >= c.floor - 1e-9 ? ' ✓' : ''}`]] : []),
+    ...(d.completed >= c.floor && d.completed < c.target && d.bankedMin > 0 ? [[`Toward the ${c.target}`, `${fmtPass(d)}${d.passTotal >= c.target - 1e-9 ? ' ✓' : ''}`]] : []),
     ['Day so far', `${RESULT[d.result].icon} ${RESULT[d.result].text}${d.anchored ? ' · anchored' : ''}`],
   ];
   $('#summary').innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
@@ -1687,7 +1710,7 @@ document.addEventListener('mousemove', e => {
 /* ============================================================
    MAIN LOOP
    ============================================================ */
-const prevCompleted = {}, prevStars = {};
+const prevCompleted = {}, prevStars = {}, prevReached = {};
 function renderAll() {
   const now = Date.now(), key = todayKey(), c = cfg();
   const d = deriveDay(key, now);
@@ -1698,7 +1721,8 @@ function renderAll() {
   if (currentTab === 'logbook') renderLogbook();
   if (currentTab === 'compare') renderCompare();
   const prev = prevCompleted[key];
-  if (prev !== undefined && prev < c.target && d.completed >= c.target) celebrate();
+  if (prevReached[key] === false && d.reached) celebrate();
+  prevReached[key] = d.reached;
   if (prevStars[key] !== undefined && d.extraStars > prevStars[key]) starBurst();   // an extra quest star (or half) just landed
   prevCompleted[key] = d.completed;
   prevStars[key] = d.extraStars;
