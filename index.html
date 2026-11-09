@@ -358,7 +358,7 @@ svg.chart{width:100%;height:auto;display:block;overflow:visible}
     </div>
     <div class="card">
       <table class="book">
-        <thead><tr><th>Date</th><th>First session</th><th>Sessions</th><th>Questions</th><th>Leaks</th><th>Finish time</th><th>Beat the Dutchman?</th></tr></thead>
+        <thead><tr><th>Date</th><th>First session</th><th>Sessions</th><th>Questions</th><th>Leaks</th><th>Finish time</th><th>Beat the Dutchman?</th><th>Studying</th></tr></thead>
         <tbody id="bookBody"></tbody>
       </table>
     </div>
@@ -1176,10 +1176,21 @@ function renderLog(d = deriveDay(todayKey())) {
   ul.querySelectorAll('[data-art]').forEach(mountArt);
 }
 
+/* time not studying (breaks + pauses) and % studying since your first session.
+   Today it runs to now (a break you're on counts); past or anchored days stop at your last session. */
+function studyStats(d, now = Date.now()) {
+  if (d.firstStart == null) return null;
+  const live = d.key === todayKey() && !d.anchored;
+  const endRef = d.running || live ? now : (d.lastEnd ?? now);
+  const span = Math.max(0, endRef - d.firstStart) / 60000;
+  const off = Math.max(0, span - d.onDeck);
+  return { span, off, pct: span >= 1 ? Math.min(100, Math.round(d.onDeck / span * 100)) : null };
+}
 function renderSummary(d, g, now) {
   const c = cfg();
   const shortN = d.sessions.filter(s => s.short && !s.extraIdx).length;   // quest sessions have their own stars
   const curBreak = !d.running && d.lastEnd ? (now - d.lastEnd) / 60000 : 0;
+  const st = studyStats(d, now);
   let ghostLine;
   if (d.completed >= c.target) ghostLine = d.beat ? '✅ Yes, you beat it' : '⚓ Finished after it';
   else if (g >= c.target) ghostLine = `No, it reached the island at ${fmtHM(d.plan.finishMs)}`;
@@ -1197,6 +1208,8 @@ function renderSummary(d, g, now) {
     ['Time on deck', fmtDur(d.onDeck)],
     ['Time in breaks', fmtDur(d.breaks) + (curBreak && d.completed < c.target ? ` (+${fmtDur(curBreak)} now)` : '')],
     ...(d.pausedTotal >= 0.5 ? [['Time paused', fmtDur(d.pausedTotal)]] : []),
+    ...(st ? [['Not studying', `${fmtDur(st.off)} (breaks + pauses)`],
+              ['Studying', st.pct == null ? '—' : `${st.pct}% of ${fmtDur(st.span)} since ${fmtHM(d.firstStart)}`]] : []),
     ['Beating the Dutchman?', ghostLine],
     ...(d.completed < c.floor && d.bankedMin > 0 ? [[`Toward the ${c.floor}`, `${fmtPass(d)}${d.passTotal >= c.floor - 1e-9 ? ' ✓' : ''}`]] : []),
     ['Day so far', `${RESULT[d.result].icon} ${RESULT[d.result].text}${d.anchored ? ' · anchored' : ''}`],
@@ -1240,8 +1253,9 @@ function renderLogbook() {
       <td class="num">${d.leaks.length}</td>
       <td class="num">${d.finishTime ? fmtHM(d.finishTime) : '—'}</td>
       <td class="res" title="${sailing ? 'Still sailing today' : RESULT[d.result].text + (k === tk ? ' (so far)' : '')}">${sailing ? '<span class="pill run" style="font-size:13px;margin:0">sailing…</span>' : RESULT[d.result].icon}</td>
+      <td class="num">${(() => { const st = studyStats(d); return st && st.pct != null ? st.pct + '%' : '—'; })()}</td>
     </tr>`;
-  }).join('') : `<tr><td colspan="7" class="empty">No days logged yet. Your first study day will appear here.</td></tr>`;
+  }).join('') : `<tr><td colspan="8" class="empty">No days logged yet. Your first study day will appear here.</td></tr>`;
 }
 
 /* ============================================================
